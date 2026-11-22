@@ -159,6 +159,9 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
   text-decoration: underline dotted; text-decoration-thickness: 2px; text-underline-offset: .18em;
 }
 
+/* Caddie: the pick is being mishit, the second choice is striking better */
+.strike-note { margin: 12px 0 0; padding: 10px 12px; border-left: 4px solid var(--fairway); background: #EEF4F0; font-size: 16px; }
+
 /* Recent-shots pop-up */
 .shots-dialog { width: min(460px, calc(100vw - 24px)); }
 .shots-dialog > form { padding: 16px; }

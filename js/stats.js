@@ -174,6 +174,29 @@ export function recentShots(sessions, code, { units = 'yd', limit = 10, ...o } =
   return { shots, counts, goodMedian: quantile(goodCarries, 0.5) };
 }
 
+/** When a strike comparison is worth showing on the Caddie screen (see strikeComparison). */
+export const STRIKE_RULES = {
+  minSwings: 5,  // both clubs need this many recent full swings (good + mishit)
+  minMishits: 3, // the suggested club has at least this many mishits among them
+  margin: 0.25,  // and the other club's good-strike rate is at least 25 points higher
+};
+
+/**
+ * Compare how two clubs have been struck lately, to speed up choosing between the suggested
+ * club and the second choice: worth mentioning only when the suggested club is being mishit
+ * and the other is clearly striking better. Partial swings (chips, pitches) don't count.
+ * pick, alt: results of recentShots(). Returns null, or { mishits, swings, altGood, altSwings }.
+ */
+export function strikeComparison(pick, alt, rules = STRIKE_RULES) {
+  if (!pick || !alt) return null;
+  const swings = r => r.counts.good + r.counts.mishit;
+  if (swings(pick) < rules.minSwings || swings(alt) < rules.minSwings) return null;
+  if (pick.counts.mishit < rules.minMishits) return null;
+  const rate = r => r.counts.good / swings(r);
+  if (rate(alt) - rate(pick) < rules.margin - 1e-9) return null;
+  return { mishits: pick.counts.mishit, swings: swings(pick), altGood: alt.counts.good, altSwings: swings(alt) };
+}
+
 // Normal CDF (Abramowitz–Stegun 7.1.26 via erf).
 function phi(x) {
   const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);

@@ -1,5 +1,5 @@
 import { parseSessionFile, clubInfo, sessionLabel } from './parse.js';
-import { buildProfiles, pickClub, recentShots, DEFAULTS } from './stats.js';
+import { buildProfiles, pickClub, recentShots, strikeComparison, DEFAULTS } from './stats.js';
 import { load, save, addSessions, backupBlob, readBackup, requestPersistence, touch, touchSettings, deleteSession, sortSessions } from './store.js';
 import { checkAccount, signOut, SIGN_IN_URL, storedAccount, rememberAccount, forgetAccount } from './account.js';
 import { syncNow, clearDevice } from './sync.js';
@@ -70,6 +70,17 @@ function recompute() {
   const usable = data.sessions.filter(s => s.date);
   allProfiles = buildProfiles(usable, { window: data.settings.window, units: data.settings.units, bag: data.settings.bag });
   profiles = allProfiles.filter(p => p.inBag);
+  recentCache.clear();
+}
+
+// A club's last 10 shots (see recentShots in stats.js). Cached until the data changes, because
+// the Caddie screen redraws on every move while the flag is dragged.
+const recentCache = new Map();
+function recentFor(code) {
+  if (!recentCache.has(code)) {
+    recentCache.set(code, recentShots(data.sessions.filter(s => s.date), code, { units: data.settings.units }));
+  }
+  return recentCache.get(code);
 }
 
 // ---------- Bag chart ----------
@@ -141,10 +152,19 @@ function renderCaddie() {
     </div>
     <div class="split-key"><span>${pct(best.short)} short</span><span>${pct(best.long)} long</span></div>
     ${backup ? `<p class="backup-club">Second choice: <strong>${shotsButton(backup.profile.code, backup.profile.name)}</strong>, ${pct(backup.inside)} in the zone, ${pct(backup.short)} short, ${pct(backup.long)} long.</p>` : ''}
+    ${strikeNote(p, backup?.profile)}
     <p class="hint">Tap a club to see how you’ve struck its last 10 shots.</p>
     ${offTarget}${thin}`;
   bagChart($('#bag-chart-caddie'), target, p.code, flagDrag);
 }
+/** One line when the pick is being mishit and the second choice is striking clearly better lately. */
+function strikeNote(pick, alt) {
+  const c = alt && strikeComparison(recentFor(pick.code), recentFor(alt.code));
+  if (!c) return '';
+  return `<p class="strike-note">You’ve mishit ${c.mishits} of your last ${c.swings} full swings with your ${shotsButton(pick.code, pick.name.toLowerCase())}.
+    Your ${shotsButton(alt.code, alt.name.toLowerCase())}: ${c.altGood} of ${c.altSwings} good.</p>`;
+}
+
 function clampTarget(v) {
   if (!Number.isFinite(v)) v = data.settings.target;
   return Math.max(20, Math.min(350, Math.round(v)));
@@ -219,7 +239,7 @@ const shortDate = d => d === todayISO() ? 'Today'
 const LABELS = { good: '', mishit: 'Mishit', partial: 'Partial' };
 
 function openShots(code) {
-  const r = recentShots(data.sessions.filter(s => s.date), code, { units: data.settings.units });
+  const r = recentFor(code);
   const usual = allProfiles.find(p => p.code === code)?.median;
   const { good, mishit, partial } = r.counts;
   $('#shots-title').textContent = clubInfo(code).name;

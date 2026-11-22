@@ -104,6 +104,17 @@ assert.notEqual(pickClub(myBag, 155, 4).best.profile.code, '4i', 'a club not in 
   const metric = recentShots([{ ...older, shots: [shot(100)] }], '6i', { units: 'm' });
   assert.equal(Math.round(metric.shots[0].carry), 109, 'Rapsodo meters are converted');
   assert.deepEqual(recentShots([older], 'lw').shots, []);
+
+  // Strike comparison for the Caddie screen.
+  const { strikeComparison } = await import('../js/stats.js');
+  const form = (good, mishit, partial = 0) => ({ counts: { good, mishit, partial } });
+  assert.deepEqual(strikeComparison(form(6, 4), form(9, 1)), { mishits: 4, swings: 10, altGood: 9, altSwings: 10 }, '3 wood 6/10 vs 4 hybrid 9/10');
+  assert.equal(strikeComparison(form(7, 3), form(9, 1)), null, '70% vs 90%: not a clear enough difference');
+  assert.deepEqual(strikeComparison(form(4, 3, 3), form(5, 0, 5)), { mishits: 3, swings: 7, altGood: 5, altSwings: 5 }, 'partials left out of both');
+  assert.equal(strikeComparison(form(8, 2), form(10, 0)), null, 'only 2 mishits');
+  assert.equal(strikeComparison(form(2, 3), form(4, 0)), null, 'too few swings with the other club');
+  assert.equal(strikeComparison(form(5, 5), form(6, 4)), null, 'both being mishit: nothing to gain');
+  assert.equal(strikeComparison(form(6, 4), null), null, 'no second choice');
 }
 
 // Importing with a bag: new clubs are asked about, removed clubs' shots are left out.
