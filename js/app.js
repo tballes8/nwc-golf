@@ -15,11 +15,51 @@ const pct = n => `${Math.round(n * 100)}%`;
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const niceDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'No date';
 
-function status(msg) {
+// ---------- Messages in the top bar ----------
+// A plain message disappears after a few seconds. A message with action buttons stays until a
+// button is used or it's closed (×), then calls onClose. holdsSync: a sync must not start while
+// it's up (see runSync), because its action still changes what was just imported.
+let notice = null; // { onClose, timer, holdsSync }
+
+function status(msg, { actions = [], onClose = null, holdsSync = false } = {}) {
+  endNotice();
   const el = $('#status');
-  el.textContent = msg;
-  clearTimeout(status.t);
-  status.t = setTimeout(() => { el.textContent = ''; }, 6000);
+  el.textContent = '';
+  if (!msg) return;
+  const text = document.createElement('span');
+  text.textContent = msg;
+  el.append(text);
+  for (const a of actions) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'note-btn';
+    b.textContent = a.label;
+    b.addEventListener('click', () => {
+      const mine = notice;
+      a.run(); // may show its own message, which ends this one
+      if (notice === mine) endNotice();
+    });
+    el.append(b);
+  }
+  if (actions.length) {
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'note-close';
+    x.textContent = '×';
+    x.setAttribute('aria-label', 'Close message');
+    x.addEventListener('click', () => endNotice());
+    el.append(x);
+  }
+  notice = { onClose, holdsSync, timer: setTimeout(endNotice, actions.length ? 60000 : 6000) };
+}
+
+function endNotice() {
+  if (!notice) return;
+  const { onClose, timer } = notice;
+  notice = null;
+  clearTimeout(timer);
+  $('#status').textContent = '';
+  onClose?.();
 }
 
 function persist() {
@@ -379,6 +419,9 @@ function scheduleSync(delay = 2000) {
 
 async function runSync() {
   if (account.state !== 'signed-in') return;
+  // An import message still offering "Add … to bag" is withdrawn first: once a session is
+  // uploaded, its shots can't change. (Closing it schedules another sync; that's harmless.)
+  if (notice?.holdsSync) endNotice();
   if (syncRunning) { syncAgain = true; return; }
   syncRunning = true;
   syncState = { state: 'syncing' };
@@ -442,6 +485,7 @@ async function importFiles(fileList) {
     setClub(data, club.code, await askNewClub(club));
     settingsChanged = true;
   }
+  const fullShots = new Map(fresh.map(s => [s, s.shots])); // kept for "Add … to bag" below
   const skipped = keepBagShots(data, fresh);
   const allSkipped = fresh.filter(s => !s.shots.length).length; // every shot was a club not in the bag
   if (settingsChanged) touchSettings(data);
@@ -449,7 +493,6 @@ async function importFiles(fileList) {
   const { added, duplicates } = addSessions(data, [...restoredSessions, ...fromFiles.filter(s => s.shots.length)]);
   persist();
   refresh();
-  if (added || settingsChanged) scheduleSync(500);
   const parts = [];
   if (added) parts.push(`Imported ${added} session${added === 1 ? '' : 's'}`);
   if (duplicates) parts.push(`${duplicates} already imported`);
@@ -460,8 +503,38 @@ async function importFiles(fileList) {
   if (allSkipped) parts.push(`${allSkipped} file${allSkipped === 1 ? ' had' : 's had'} only clubs not in your bag`);
   if (restored && !added) parts.push('Backup had nothing new');
   if (errors.length) parts.push(errors[0]);
-  status(parts.join('. ') || 'Nothing imported.');
-  if (data.sessions.some(s => !s.date)) status('Add a date to each session marked “Session date” so it can be used.');
+  if (data.sessions.some(s => !s.date)) parts.push('Add a date to each session marked “Session date” so it can be used');
+  const msg = `${parts.join('. ') || 'Nothing imported'}.`;
+
+  if (!skipped.size) {
+    status(msg);
+    if (added || settingsChanged) scheduleSync(500);
+    return;
+  }
+  // Offer to take the left-out clubs after all. Sync waits until the message is closed, so the
+  // shots can still be added to the sessions before they're uploaded.
+  status(msg, {
+    actions: [...skipped.keys()].map(code => ({ label: `Add ${clubInfo(code).name} to bag`, run: () => addSkippedClub(code, fullShots) })),
+    onClose: () => scheduleSync(500),
+    holdsSync: true,
+  });
+}
+
+/** "Add … to bag" after an import: put the club in the bag and bring in the shots just left out. */
+function addSkippedClub(code, fullShots) {
+  setClub(data, code, true);
+  touchSettings(data);
+  let shotsIn = 0;
+  for (const [s, full] of fullShots) {
+    const stored = data.sessions.find(x => x.id === s.id);
+    if (stored && stored !== s) continue; // the file was a duplicate of a stored session
+    const before = s.shots.length;
+    s.shots = full.filter(x => x.clubCode === code || s.shots.includes(x)); // file order kept
+    shotsIn += s.shots.length - before;
+    if (!stored && s.shots.length) addSessions(data, [s]); // every shot had been left out
+  }
+  persist(); refresh();
+  status(`Added ${clubInfo(code).name} to your bag and imported its ${shotsIn} shot${shotsIn === 1 ? '' : 's'}.`);
 }
 
 function download(blob, name) {

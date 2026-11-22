@@ -1,6 +1,6 @@
 // Offline support: cache the app shell, serve it when there's no signal on the course.
 // Bump VERSION whenever you deploy changes so phones pick up the new files.
-const VERSION = 'nwc-golf-v7';
+const VERSION = 'nwc-golf-v8';
 const SHELL = [
   './',
   'index.html',
