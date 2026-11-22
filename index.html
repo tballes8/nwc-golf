@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>NWC Golf</title>
+  <meta name="description" content="Club selection from your own launch monitor data.">
+  <meta name="theme-color" content="#1E5A3A">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="NWC Golf">
+  <link rel="preload" href="fonts/barlow-condensed-latin-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="top">
+    <span class="brand">NWC Golf</span>
+    <span class="top-status" id="status" role="status" aria-live="polite"></span>
+  </header>
+
+  <main>
+    <!-- Caddie -->
+    <section id="view-caddie" class="view" aria-labelledby="t-caddie">
+      <h1 id="t-caddie" class="sr-only">Caddie</h1>
+
+      <div class="yardage" role="group" aria-label="Carry distance to target">
+        <button class="step" data-step="-5" aria-label="Minus 5 yards">−5</button>
+        <button class="step" data-step="-1" aria-label="Minus 1 yard">−1</button>
+        <label class="yd">
+          <input id="target" type="number" inputmode="numeric" min="20" max="350" value="150" aria-label="Carry yards to target">
+          <span>yards to carry</span>
+        </label>
+        <button class="step" data-step="1" aria-label="Plus 1 yard">+1</button>
+        <button class="step" data-step="5" aria-label="Plus 5 yards">+5</button>
+      </div>
+
+      <div id="answer" class="answer"></div>
+
+      <div class="zone">
+        <span>Landing zone</span>
+        <div class="zone-ctl" role="group" aria-label="Landing zone size">
+          <button class="mini" data-zone="-2" aria-label="Smaller landing zone">−</button>
+          <output id="zone-out">± 8 yd</output>
+          <button class="mini" data-zone="2" aria-label="Larger landing zone">+</button>
+        </div>
+      </div>
+
+      <figure class="bag" aria-label="Carry range for each club">
+        <div id="bag-chart-caddie"></div>
+        <figcaption>Thick bar: your middle half of shots. Thin line: 8 of 10 shots. Red line: your target.</figcaption>
+      </figure>
+    </section>
+
+    <!-- Bag -->
+    <section id="view-bag" class="view" hidden aria-labelledby="t-bag">
+      <h1 id="t-bag">Your bag</h1>
+      <p class="lede" id="bag-lede"></p>
+      <figure class="bag">
+        <div id="bag-chart"></div>
+      </figure>
+      <div id="club-list" class="club-list"></div>
+    </section>
+
+    <!-- Sessions -->
+    <section id="view-sessions" class="view" hidden aria-labelledby="t-sessions">
+      <h1 id="t-sessions">Sessions</h1>
+
+      <div class="import">
+        <label class="btn primary" for="file">Import session files</label>
+        <input id="file" type="file" accept=".csv,text/csv,.json,application/json" multiple class="sr-only">
+        <p class="hint">Export each session from Rapsodo R-Cloud as a CSV, then pick one or more files here. A backup file from this app works too.</p>
+      </div>
+
+      <div class="settings">
+        <label class="field">
+          <span>Distances in your files</span>
+          <select id="units">
+            <option value="yd">Yards</option>
+            <option value="m">Meters</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Shots used for each club</span>
+          <select id="window">
+            <option value="recent">Recent sessions</option>
+            <option value="all">All sessions</option>
+          </select>
+        </label>
+        <p class="hint" id="window-hint"></p>
+      </div>
+
+      <ul id="session-list" class="session-list"></ul>
+
+      <div class="backup">
+        <button class="btn" id="backup">Download backup</button>
+        <p class="hint">Your data lives on this phone only. Download a backup now and then, and keep the app on your Home Screen so iPhone doesn't clear it.</p>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Sections">
+    <button data-view="caddie" aria-current="page">Caddie</button>
+    <button data-view="bag">Bag</button>
+    <button data-view="sessions">Sessions</button>
+  </nav>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
