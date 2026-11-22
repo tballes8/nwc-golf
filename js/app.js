@@ -28,11 +28,20 @@ function recompute() {
 }
 
 // ---------- Bag chart ----------
-function bagChart(el, target, pickCode) {
+// Column widths shared with .row/.axis in app.css: club name | track | median.
+const NAME_W = 76, MEDIAN_W = 40;
+
+/** scale: optional { min, max } in yards; used to hold the chart still while the flag is dragged. */
+function bagChart(el, target, pickCode, scale = null) {
   if (!profiles.length) { el.innerHTML = ''; return; }
-  const lo = Math.min(...profiles.map(p => p.p10), target ?? Infinity);
-  const hi = Math.max(...profiles.map(p => p.p90), target ?? -Infinity);
-  const min = Math.floor((lo - 5) / 10) * 10, max = Math.ceil((hi + 5) / 10) * 10;
+  let min, max;
+  if (scale) ({ min, max } = scale);
+  else {
+    const lo = Math.min(...profiles.map(p => p.p10), target ?? Infinity);
+    const hi = Math.max(...profiles.map(p => p.p90), target ?? -Infinity);
+    min = Math.floor((lo - 5) / 10) * 10; max = Math.ceil((hi + 5) / 10) * 10;
+  }
+  el.dataset.min = min; el.dataset.max = max;
   const x = v => `${((v - min) / (max - min)) * 100}%`;
   const ticks = [];
   const stepT = max - min > 120 ? 25 : 20;
@@ -51,7 +60,7 @@ function bagChart(el, target, pickCode) {
           <span class="md">${fmt(p.median)}</span>
         </div>`).join('')}
       <div class="axis"><span></span><div class="scale">${ticks.map(t => `<span style="left:${x(t)}">${t}</span>`).join('')}</div><span></span></div>
-      ${target != null ? `<div class="flagline" style="left:calc(76px + (100% - 116px) * ${(target - min) / (max - min)})" aria-hidden="true"></div>` : ''}
+      ${target != null ? `<div class="flagline" style="left:calc(${NAME_W}px + (100% - ${NAME_W + MEDIAN_W}px) * ${(target - min) / (max - min)})" aria-hidden="true"></div>` : ''}
     </div>`;
 }
 function shortName(p) {
@@ -66,7 +75,7 @@ function renderCaddie() {
   const el = $('#answer');
 
   if (!profiles.length) {
-    el.innerHTML = `<div class="empty"><p>Import a few Rapsodo sessions to get club picks from your own shots.</p><button class="btn primary" data-go="sessions">Import sessions</button></div>`;
+    el.innerHTML = `<div class="empty"><p>Import a few sessions to get club picks from your own shots.</p><button class="btn primary" data-go="sessions">Import sessions</button></div>`;
     bagChart($('#bag-chart-caddie'), null, null);
     return;
   }
@@ -86,7 +95,7 @@ function renderCaddie() {
     <div class="split-key"><span>${pct(best.short)} short</span><span>${pct(best.long)} long</span></div>
     ${backup ? `<p class="backup-club">Second choice: <strong>${esc(backup.profile.name)}</strong>, ${pct(backup.inside)} in the zone, ${pct(backup.short)} short, ${pct(backup.long)} long.</p>` : ''}
     ${offTarget}${thin}`;
-  bagChart($('#bag-chart-caddie'), target, p.code);
+  bagChart($('#bag-chart-caddie'), target, p.code, flagDrag);
 }
 function clampTarget(v) {
   if (!Number.isFinite(v)) v = data.settings.target;
@@ -99,6 +108,52 @@ function setTarget(v) {
   persist();
   renderCaddie();
 }
+
+// ---------- Dragging the flag on the Caddie chart ----------
+// Mouse: press anywhere along the tracks to move the target there, then drag.
+// Touch: grab near the flag, so scrolling past the chart doesn't move the target.
+const caddieChart = $('#bag-chart-caddie');
+let flagDrag = null; // chart scale { min, max }, held fixed while dragging
+
+function trackBox() {
+  const box = caddieChart.querySelector('.chart').getBoundingClientRect();
+  return { left: box.left + NAME_W, right: box.right - MEDIAN_W };
+}
+function moveFlag(clientX) {
+  const { left, right } = trackBox(), { min, max } = flagDrag;
+  const yards = min + ((clientX - left) / (right - left)) * (max - min);
+  const t = clampTarget(Math.max(min, Math.min(max, yards)));
+  if (t === +$('#target').value) return;
+  $('#target').value = t;
+  data.settings.target = t;
+  renderCaddie();
+}
+function endFlagDrag() {
+  if (!flagDrag) return;
+  flagDrag = null;
+  caddieChart.classList.remove('dragging');
+  persist();
+  renderCaddie(); // back to the chart's normal scale
+}
+caddieChart.addEventListener('pointerdown', e => {
+  if (!profiles.length || e.button !== 0) return;
+  const { left, right } = trackBox();
+  if (e.pointerType === 'mouse') {
+    if (e.clientX < left || e.clientX > right) return; // on a club name or median, not a track
+  } else {
+    const flag = caddieChart.querySelector('.flagline');
+    if (!flag || Math.abs(e.clientX - flag.getBoundingClientRect().left) > 24) return;
+  }
+  e.preventDefault(); // no text selection while dragging
+  flagDrag = { min: +caddieChart.dataset.min, max: +caddieChart.dataset.max };
+  caddieChart.setPointerCapture(e.pointerId);
+  caddieChart.classList.add('dragging');
+  moveFlag(e.clientX);
+});
+caddieChart.addEventListener('pointermove', e => { if (flagDrag) moveFlag(e.clientX); });
+caddieChart.addEventListener('pointerup', endFlagDrag);
+caddieChart.addEventListener('pointercancel', endFlagDrag);
+caddieChart.addEventListener('lostpointercapture', endFlagDrag);
 
 // ---------- Bag ----------
 function renderBag() {
@@ -118,7 +173,7 @@ function renderBag() {
         <div class="club-head"><h2>${esc(p.name)}</h2><span class="big">${fmt(p.median)}<small>yd</small></span></div>
         <dl>
           <dt>Usual carry</dt><dd>${fmt(p.p25)}–${fmt(p.p75)} yd (middle half of shots)</dd>
-          <dt>Left/right</dt><dd>about ±${fmt(p.sideSd)} yd${Math.abs(p.sideMean) >= 3 ? `, leaning ${p.sideMean < 0 ? 'left' : 'right'} ${fmt(Math.abs(p.sideMean))} yd` : ''}</dd>
+          ${p.sideSd != null ? `<dt>Left/right</dt><dd>about ±${fmt(p.sideSd)} yd${Math.abs(p.sideMean) >= 3 ? `, leaning ${p.sideMean < 0 ? 'left' : 'right'} ${fmt(Math.abs(p.sideMean))} yd` : ''}</dd>` : ''}
           <dt>Shots</dt><dd class="${conf}">${p.goodShots} full swings${conf ? ` (${p.confidence} data)` : ''}</dd>
           ${p.mishits || p.partials ? `<dt>Left out</dt><dd>${[p.mishits ? `${p.mishits} mishit${p.mishits === 1 ? '' : 's'}` : '', p.partials ? `${p.partials} partial swing${p.partials === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ')}</dd>` : ''}
           ${Number.isFinite(p.clubSpeed) ? `<dt>Club speed</dt><dd>${fmt(p.clubSpeed)} mph</dd>` : ''}
@@ -143,8 +198,11 @@ function renderSessions() {
     return `
       <li class="${s.excluded ? 'off' : ''}">
         <div>
-          ${s.date ? `<div class="d">${niceDate(s.date)}</div>` : `<label class="field"><span>Session date</span><input type="date" data-date="${s.id}"></label>`}
-          <div class="meta">${s.shots.length} shots${s.type ? `, ${esc(sessionLabel(s.type))}` : ''}. ${esc(clubs)}</div>
+          ${s.date && !s.dateGuessed
+            ? `<div class="d">${niceDate(s.date)}</div>`
+            : `<label class="field"><span>${s.date ? 'Date played' : 'Session date'}</span><input type="date" data-date="${s.id}" value="${esc(s.date || '')}"></label>`}
+          ${s.dateGuessed ? '<div class="meta">This is the day the file was exported. Change it if you played on a different day.</div>' : ''}
+          <div class="meta">${s.shots.length} shots${s.label ? `, ${esc(s.label)}` : s.type ? `, ${esc(sessionLabel(s.type))}` : ''}. ${esc(clubs)}</div>
           ${s.excluded ? '<div class="meta">Left out of your club distances</div>' : ''}
         </div>
         <div class="s-actions">
@@ -248,7 +306,7 @@ $('#session-list').addEventListener('change', e => {
   const id = e.target.dataset.date;
   if (!id || !e.target.value) return;
   const s = data.sessions.find(x => x.id === id);
-  if (s) { s.date = e.target.value; data.sessions.sort((a, b) => (b.date || '').localeCompare(a.date || '')); persist(); refresh(); }
+  if (s) { s.date = e.target.value; delete s.dateGuessed; data.sessions.sort((a, b) => (b.date || '').localeCompare(a.date || '')); persist(); refresh(); }
 });
 
 // ---------- Start ----------

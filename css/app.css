@@ -105,6 +105,10 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .axis .scale { position: relative; font-size: 12px; color: var(--ink-2); }
 .axis .scale span { position: absolute; transform: translateX(-50%); }
 .flagline { position: absolute; top: 0; bottom: 20px; width: 2px; background: var(--flag); pointer-events: none; }
+/* Caddie chart: the flag can be dragged (see "Dragging the flag" in app.js). */
+#bag-chart-caddie { touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+#bag-chart-caddie .track, #bag-chart-caddie .scale, #bag-chart-caddie.dragging { cursor: ew-resize; }
+#bag-chart-caddie.dragging .flagline { width: 3px; }
 .flagline::before { content: ""; position: absolute; top: -2px; left: 2px; border-left: 12px solid var(--flag); border-top: 6px solid transparent; border-bottom: 6px solid transparent; }
 
 /* Club list */

@@ -47,21 +47,28 @@ function daysBetween(a, b) { return Math.round((new Date(a) - new Date(b)) / 864
 
 /**
  * Build one profile per club.
- * window: 'recent' (default) or 'all'. units: 'yd' or 'm' (what the files contain).
+ * window: 'recent' (default) or 'all'.
+ * units: 'yd' or 'm', what Rapsodo files contain. Sessions that record their own units
+ * (E6, converted to yards at import) ignore it.
  */
 export function buildProfiles(sessions, { window = 'recent', units = 'yd', ...o } = {}) {
   const opts = { ...DEFAULTS, ...o };
-  const k = units === 'm' ? M_TO_YD : 1;
 
   // Group shots by club, keeping their session.
   const byClub = new Map();
   for (const s of sessions) {
     if (s.excluded) continue; // the golfer chose to leave this session out
+    const k = (s.units || units) === 'm' ? M_TO_YD : 1;
     for (const shot of s.shots) {
       if (!byClub.has(shot.clubCode)) byClub.set(shot.clubCode, new Map());
       const m = byClub.get(shot.clubCode);
       if (!m.has(s.id)) m.set(s.id, { session: s, shots: [] });
-      m.get(s.id).shots.push({ ...shot, carry: shot.carry * k, side: (shot.side ?? 0) * k, total: shot.total != null ? shot.total * k : null });
+      m.get(s.id).shots.push({
+        ...shot,
+        carry: shot.carry * k,
+        side: shot.side != null ? shot.side * k : null, // E6 has no side carry
+        total: shot.total != null ? shot.total * k : null,
+      });
     }
   }
 
@@ -88,7 +95,8 @@ export function buildProfiles(sessions, { window = 'recent', units = 'yd', ...o 
     const { good, partial, mishit } = classify(all, opts);
     if (!good.length) continue;
     const carries = good.map(s => s.carry).sort((a, b) => a - b);
-    const sides = good.map(s => s.side);
+    const sides = good.map(s => s.side).filter(x => x != null);
+    const hasSide = sides.length >= 2; // otherwise there's no left/right spread to show
     const info = clubInfo(code);
 
     profiles.push({
@@ -107,8 +115,8 @@ export function buildProfiles(sessions, { window = 'recent', units = 'yd', ...o 
       p75: quantile(carries, 0.75),
       p90: quantile(carries, 0.9),
       sd: sd(carries),
-      sideSd: sd(sides),
-      sideMean: mean(sides),
+      sideSd: hasSide ? sd(sides) : null,
+      sideMean: hasSide ? mean(sides) : null,
       clubSpeed: quantile(good.map(s => s.clubSpeed).filter(x => x != null).sort((a, b) => a - b), 0.5),
       sessions: chosen.map(g => ({ id: g.session.id, date: g.session.date, shots: g.shots.length })),
       confidence: good.length >= 20 ? 'solid' : good.length >= 10 ? 'thin' : 'very thin',

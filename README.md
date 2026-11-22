@@ -6,8 +6,8 @@ Live at: https://golf.nwc-analytics.com
 
 ## What v1 does
 
-- Imports Rapsodo MLM2PRO session CSVs exported from R-Cloud (several at once). It also restores backups made by the app.
-- Takes the session date from the filename (`session-range-2026-10-12.csv`). If a file has no date in its name, the app asks for one.
+- Imports Rapsodo MLM2PRO session CSVs exported from R-Cloud and E6 Connect shot data exports (several at once). It also restores backups made by the app.
+- Takes the session date from the filename (`session-range-2026-10-12.csv`). If a file has no date in its name, the app asks for one. E6 filenames hold the export time in UTC (`shot_data_export_2026-11-20T00_49_06Z.csv`), so the app uses the local export date and lets you change it on the Sessions screen.
 - Skips sessions that were already imported.
 - Builds a profile for each club from **carry only**. Spin and total distance are ignored because the MLM2PRO's indoor spin readings are unreliable without RPT balls.
 - Leaves out mishits: shots with a smash factor under 1.0, or a carry under 75% of that club's median.
@@ -42,9 +42,10 @@ Then open http://localhost:8000. (Offline mode only switches on over HTTPS, so i
 ## Tests
 
 ```
-node tests/run.mjs path/to/session-*.csv
+node tests/run.mjs
+node tests/run.mjs path/to/session-*.csv path/to/shot_data_export_*.csv
 ```
-Checks the CSV parser, filename dates, duplicate detection and club picks against real exports.
+The first runs built-in checks (CSV parsing, filename dates, E6 import, units). Passing real exports also checks duplicate detection, club profiles and club picks against your data. CSVs are git-ignored, so keep them outside the repo or uncommitted.
 
 ## Files
 
@@ -68,8 +69,10 @@ tests/run.mjs         tests
 ## Data notes
 
 - Every session carries `userId: 'local'`, so accounts and cloud sync can be added later without reshaping the data.
-- Units: Rapsodo exports have no unit labels. Set "Distances in your files" to Meters if your Rapsodo app is set to meters.
-- Club codes mapped so far: `d`, `3w`, `5w`, `4i`–`9i`. Hybrids (`4h`), wedges (`pw`, `gw`, `sw`, `lw`) and degree wedges (`52`) are guessed; check them against a real export.
+- Units: Rapsodo exports have no unit labels. Set "Distances in Rapsodo files" to Meters if your Rapsodo app is set to meters. E6 exports put the units in the headers and are converted to yards, mph and feet at import, so the setting doesn't affect them.
+- Club codes mapped so far: `d`, `3w`, `5w`, `4h`, `4i`–`9i`, `pw`, `aw`, `lw`. Other hybrids, `gw`, `sw` and degree wedges (`52`) are guessed; check them against a real export.
+- E6 club names map to the same codes (`Driver`→`d`, `3 Wood`→`3w`, `4 Hybrid`→`4h`, `7 Iron`→`7i`). Wedges follow this bag: E6 `Gap Wedge` is Rapsodo `aw` and E6 `Sand Wedge` is Rapsodo `lw` (`E6_WEDGES` in `js/parse.js`). An unmapped name such as `Lob Wedge` shows up as its own club.
+- E6 has no smash factor or side carry. Smash is computed as ball speed / head speed; clubs with only E6 shots show no left/right line.
 
 ## Next
 
