@@ -28,6 +28,7 @@ Samples: `shot_data_export_2026-11-20T00_49_06.772054Z.csv` (Oslo Golf Club, 18 
 - **Topped shots slip past the current mishit filter.** 4 Hybrid has 7 shots: carries 17, 36, 66, 76, 116, 119, 144 with smash ~1.43 and apex 0.1–4.3 ft on the bad ones. The median (76) is dragged down by the mishits, so "under 75% of median" keeps 66 and 76.
   - Proposed extra rule for all formats: mishit if carry per mph of ball speed < 0.9 (good shots run 1.0–1.6 yd/mph; the topped 4h shots are 0.15–0.71), or apex under 10 ft on a full swing.
   - Also compute the 75%-of-median check on shots that pass the yd/mph rule, so mishits don't drag the median down.
+  - **Done Nov 22** (`clearMishit` and `classify` in `js/stats.js`). Checked on all exports first: Rapsodo apex is in feet; full wedge swings run 0.93–1.24 yd/mph, so 0.9 suits wedges too. Effect: 3 wood and 5 iron gain one mishit each; lob wedge median 84 → 90 (five 57–60 yd shots, likely three-quarter swings, now fall under the 75% cutoff).
 
 ## Double counting (resolved Nov 22: not an issue)
 All shots come from the MLM2PRO, but E6 Connect stores the rounds played through it only on the E6 platform, and R-Cloud stores only sessions played in Rapsodo's own app. The same shots never appear in both exports, so no cross-format duplicate check is needed.

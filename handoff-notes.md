@@ -11,7 +11,7 @@ State of the app when development moved to Claude Code in VS Code.
 ## How the numbers are built (js/stats.js)
 - Carry only. Total distance and spin are not used.
 - Partial swings left out: club speed under 85% of that club's 90th-percentile club speed (chips and pitches from sim rounds).
-- Mishits left out: smash factor under 1.0, or carry under 75% of the club's median full-swing carry.
+- Mishits left out: smash factor under 1.0, carry under 0.9 yd per mph of ball speed, apex under 10 ft, or carry under 75% of the median of the club's full swings that pass those three checks. (Ball-speed and apex checks added Nov 22 from e6-import-spec.md; skipped for metric Rapsodo files. Rapsodo apex is in feet, like E6.)
 - Recent window: last 120 days of each club's sessions, reaching back until the club has 15 good shots. "All sessions" option on the Sessions screen.
 - Club pick: each shot smoothed as a 4-yd bell curve; chance of landing within ± landing zone. Only clubs with 5+ good shots and a median within 20 yd of the target compete. Second choice = next club longer or shorter in the bag.
 - Sessions can be left out without deleting them.

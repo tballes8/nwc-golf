@@ -80,6 +80,27 @@ assert.equal(myBag.find(p => p.code === '5h').gapWarning, undefined, 'no warning
 assert.equal(pickClub(everything, 155, 4).best.profile.code, '4i');
 assert.notEqual(pickClub(myBag, 155, 4).best.profile.code, '4i', 'a club not in the bag is never picked');
 
+// Mishit rule (e6-import-spec.md): the 4 hybrid from the Oslo round. Carries 17, 36, 66, 76 were
+// topped (smash ~1.43 but low carry for the ball speed, apex 0.1-4.3 ft). The old rule kept 66 and
+// 76 because the topped shots dragged the median down to 76.
+{
+  const h = (carry, ballSpeed, apex) => ({ clubCode: '4h', carry, ballSpeed, apex, clubSpeed: 82, smash: 1.43 });
+  const oslo = [h(17, 109, 0.1), h(36, 120, 0.2), h(66, 107, 4.3), h(76, 118, 2.1), h(116, 117, 30), h(119, 109, 33), h(144, 118, 40)];
+  const [p] = buildProfiles([{ id: 'oslo', date: '2026-11-19', units: 'yd', shots: oslo }]);
+  assert.deepEqual(p.carries.map(Math.round), [116, 119, 144], 'all four topped shots are mishits');
+  assert.equal(p.mishits, 4);
+
+  // Each new sign on its own, on an otherwise normal 7 iron.
+  const i7 = (over = {}) => ({ clubCode: '7i', carry: 130, ballSpeed: 100, apex: 70, clubSpeed: 75, smash: 1.33, ...over });
+  const base = [130, 132, 128, 131, 129].map(carry => i7({ carry }));
+  const one = (over, sessionUnits = 'yd') => buildProfiles([{ id: 'x', date: '2026-11-01', units: sessionUnits, shots: [...base, i7(over)] }])[0].mishits;
+  assert.equal(one({ carry: 110, ballSpeed: 130 }), 1, 'carry under 0.9 yd per mph of ball speed');
+  assert.equal(one({ carry: 120, apex: 8 }), 1, 'apex under 10 ft');
+  assert.equal(one({ carry: 120 }), 0, 'a normal shot');
+  assert.equal(one({ carry: 120, ballSpeed: 140, apex: 8 }, 'm'), 0, 'metric Rapsodo: ball speed and apex checks skipped');
+  assert.equal(one({ carry: 120, smash: 0.9 }, 'm'), 1, '...but smash still applies');
+}
+
 // Recent shots for a club: newest first, labelled by the same rules as the club's numbers.
 {
   const { recentShots } = await import('../js/stats.js');

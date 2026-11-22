@@ -10,7 +10,7 @@ Live at: https://golf.nwc-analytics.com
 - Takes the session date from the filename (`session-range-2026-10-12.csv`). If a file has no date in its name, the app asks for one. E6 filenames hold the export time in UTC (`shot_data_export_2026-11-20T00_49_06Z.csv`), so the app uses the local export date and lets you change it on the Sessions screen.
 - Skips sessions that were already imported.
 - Builds a profile for each club from **carry only**. Spin and total distance are ignored because the MLM2PRO's indoor spin readings are unreliable without RPT balls.
-- Leaves out mishits: shots with a smash factor under 1.0, or a carry under 75% of that club's median.
+- Leaves out mishits: a smash factor under 1.0, a carry under 0.9 yd per mph of ball speed, an apex under 10 ft, or a carry under 75% of the median of the club's other full swings (that median leaves out the first three kinds, so topped shots can't hide each other). The ball-speed and apex checks need yards, mph and feet, so they're skipped for Rapsodo files while the setting is on meters.
 - Uses recent sessions by default: the last 120 days of each club's data, reaching further back until the club has 15 good shots. Switch to "All sessions" on the Sessions screen.
 - Caddie screen: enter yards to carry and get the club with the best chance of landing inside the landing zone (±8 yd by default), plus a second choice.
 - Flags clubs with thin data and clubs that carry no farther than the next club down.

@@ -6,6 +6,8 @@ export const DEFAULTS = {
   minShots: 15,        // ...but keep reaching back until a club has this many good shots
   mishitCarryRatio: 0.75, // shots carrying under 75% of the club's median are mishits
   mishitSmash: 1.0,    // smash factor under 1.0 is a mishit
+  mishitCarryPerMph: 0.9, // carry under 0.9 yd per mph of ball speed is a mishit (good strikes: 1.0-1.6; topped: 0.15-0.7)
+  mishitApexFt: 10,    // a full swing that never gets 10 ft high is a mishit (topped, thinned)
   partialSpeedRatio: 0.85, // club speed under 85% of the club's full-swing speed = partial swing
   bandwidth: 4,        // yards of smoothing per shot when estimating chances
 };
@@ -20,15 +22,25 @@ export function quantile(sorted, q) {
 const mean = a => a.reduce((s, x) => s + x, 0) / a.length;
 const sd = a => a.length < 2 ? 0 : Math.sqrt(a.reduce((s, x) => s + (x - mean(a)) ** 2, 0) / (a.length - 1));
 
-function isMishit(shot, clubMedian, opts) {
+/**
+ * Mishit signs that don't depend on the club's other shots: smash factor under 1.0, carry far
+ * too short for the ball speed, or an apex that never got off the ground.
+ * The last two need yards, mph and feet, so they're skipped for shots whose units aren't known
+ * (`imperial: false`: Rapsodo files with the setting on meters, where ball speed may not be mph).
+ */
+function clearMishit(shot, opts) {
   if (shot.smash != null && shot.smash < opts.mishitSmash) return true;
-  return shot.carry < clubMedian * opts.mishitCarryRatio;
+  if (shot.imperial === false) return false;
+  if (shot.ballSpeed > 0 && shot.carry / shot.ballSpeed < opts.mishitCarryPerMph) return true;
+  return shot.apex != null && shot.apex < opts.mishitApexFt;
 }
 
 /**
  * Split one club's shots into full swings, partial swings and mishits.
  * Partial = club speed well below this club's normal full-swing speed
- * (chips and pitches from sim rounds, mostly).
+ * (chips and pitches from sim rounds, mostly). Mishit = a clear sign (clearMishit), or a carry
+ * under 75% of the median of the club's other full swings. That median leaves out the clear
+ * mishits, so a batch of topped shots can't drag it down and hide each other.
  */
 function classify(shots, opts) {
   const speeds = shots.map(s => s.clubSpeed).filter(x => x != null).sort((a, b) => a - b);
@@ -37,9 +49,11 @@ function classify(shots, opts) {
   for (const s of shots) {
     (fullSpeed && s.clubSpeed != null && s.clubSpeed < fullSpeed * opts.partialSpeedRatio ? partial : full).push(s);
   }
-  const med = quantile(full.map(s => s.carry).sort((a, b) => a - b), 0.5);
+  const clear = new Set(full.filter(s => clearMishit(s, opts)));
+  const rest = full.filter(s => !clear.has(s));
+  const med = quantile(rest.map(s => s.carry).sort((a, b) => a - b), 0.5);
   const good = [], mishit = [];
-  for (const s of full) (isMishit(s, med, opts) ? mishit : good).push(s);
+  for (const s of full) (clear.has(s) || s.carry < med * opts.mishitCarryRatio ? mishit : good).push(s);
   return { good, partial, mishit };
 }
 
@@ -71,6 +85,7 @@ export function buildProfiles(sessions, { window = 'recent', units = 'yd', bag =
         carry: shot.carry * k,
         side: shot.side != null ? shot.side * k : null, // E6 has no side carry
         total: shot.total != null ? shot.total * k : null,
+        imperial: k === 1, // yards, mph and feet: the ball-speed and apex mishit checks apply
       });
     }
   }
@@ -154,7 +169,7 @@ export function recentShots(sessions, code, { units = 'yd', limit = 10, ...o } =
     const k = (s.units || units) === 'm' ? M_TO_YD : 1;
     s.shots.forEach((shot, i) => {
       if (shot.clubCode !== code) return;
-      all.push({ ...shot, carry: shot.carry * k, total: shot.total != null ? shot.total * k : null, date: s.date, n: i, importedAt: s.importedAt || '' });
+      all.push({ ...shot, carry: shot.carry * k, total: shot.total != null ? shot.total * k : null, imperial: k === 1, date: s.date, n: i, importedAt: s.importedAt || '' });
     });
   }
   const { partial, mishit } = classify(all, opts);
