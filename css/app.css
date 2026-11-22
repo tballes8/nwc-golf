@@ -129,8 +129,10 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 18px;
   border-radius: var(--r-small); border: 2px solid var(--fairway); background: var(--paper); color: var(--fairway);
-  font: 600 17px/1 var(--body); cursor: pointer;
+  font: 600 17px/1 var(--body); cursor: pointer; text-decoration: none;
 }
+.account { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rough); }
+.account p { margin: 0; }
 .btn.primary { background: var(--fairway); color: #fff; }
 .btn.danger { border-color: var(--rough); color: var(--flag); min-height: 40px; padding: 0 12px; font-size: 15px; }
 .settings { padding: 14px 0; border-top: 1px solid var(--rough); }

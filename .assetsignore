@@ -11,3 +11,7 @@ bun.lock
 bun.lockb
 *.md
 tests/
+# Server code and local-only files
+worker/
+migrations/
+.dev.vars

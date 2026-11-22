@@ -1,6 +1,6 @@
 // Offline support: cache the app shell, serve it when there's no signal on the course.
 // Bump VERSION whenever you deploy changes so phones pick up the new files.
-const VERSION = 'nwc-golf-v2';
+const VERSION = 'nwc-golf-v3';
 const SHELL = [
   './',
   'index.html',
@@ -9,6 +9,7 @@ const SHELL = [
   'js/parse.js',
   'js/stats.js',
   'js/store.js',
+  'js/account.js',
   'manifest.webmanifest',
   'icons/icon-192.png',
   'icons/icon-512.png',
@@ -34,7 +35,10 @@ self.addEventListener('activate', e => {
 
 // Network first (so updates show up when online), cache when offline.
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // Never cache the API or Cloudflare Access sign-in/out: private data and login redirects.
+  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/cdn-cgi/')) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {

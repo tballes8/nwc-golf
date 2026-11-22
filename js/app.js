@@ -1,6 +1,7 @@
 import { parseSessionFile, clubInfo, sessionLabel } from './parse.js';
 import { buildProfiles, pickClub, DEFAULTS } from './stats.js';
 import { load, save, addSessions, backupBlob, readBackup, requestPersistence } from './store.js';
+import { checkAccount, signOut, SIGN_IN_URL } from './account.js';
 
 const $ = sel => document.querySelector(sel);
 const data = load();
@@ -213,6 +214,27 @@ function renderSessions() {
   }).join('');
 }
 
+// ---------- Account (sign-in for sync) ----------
+async function renderAccount() {
+  const el = $('#account');
+  const a = await checkAccount();
+  if (a.state === 'unavailable') { el.hidden = true; return; } // no API here, e.g. python http.server
+  el.hidden = false;
+  if (a.state === 'signed-in') {
+    el.innerHTML = `
+      <p>Signed in as <strong>${esc(a.email)}</strong>. Syncing sessions between your devices is coming next.</p>
+      <button class="btn quiet" id="sign-out">Sign out</button>`;
+  } else if (a.state === 'signed-out') {
+    el.innerHTML = `
+      <p>Testers: sign in to keep your sessions on all your devices.</p>
+      <a class="btn" href="${SIGN_IN_URL}">Sign in</a>`;
+  } else if (a.state === 'offline') {
+    el.innerHTML = '<p class="hint">You’re offline. Your sign-in shows here when you’re back online.</p>';
+  } else {
+    el.innerHTML = '<p class="hint">Couldn’t check your sign-in. Try again later.</p>';
+  }
+}
+
 async function importFiles(fileList) {
   const sessions = [], errors = [];
   let restored = 0;
@@ -292,6 +314,9 @@ document.addEventListener('click', e => {
       t.dataset.confirm = '1'; t.textContent = 'Tap to delete';
       setTimeout(() => { if (t.isConnected) { t.dataset.confirm = ''; t.textContent = 'Delete'; } }, 4000);
     }
+  } else if (t.id === 'sign-out') {
+    t.disabled = true;
+    signOut().then(renderAccount).then(() => status('Signed out.'));
   } else if (t.id === 'backup') {
     download(backupBlob(data), `nwc-golf-backup-${new Date().toISOString().slice(0, 10)}.json`);
     status('Backup downloaded.');
@@ -313,6 +338,14 @@ $('#session-list').addEventListener('change', e => {
 $('#target').value = data.settings.target;
 refresh();
 requestPersistence();
+renderAccount();
+window.addEventListener('online', renderAccount);
+if (new URLSearchParams(location.search).has('signed-in')) {
+  // Back from the Access sign-in page (see /api/login in worker/index.js).
+  history.replaceState(null, '', location.pathname);
+  show('sessions');
+  status('Signed in.');
+}
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }

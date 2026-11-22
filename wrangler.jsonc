@@ -1,15 +1,37 @@
-// Cloudflare Workers config: static assets only, no Worker script.
-// Committed so Workers Builds uses it instead of generating one on every deploy
-// (the generated one turned the workers.dev and preview URLs back on).
+// Cloudflare Workers config. Committed so Workers Builds uses it instead of generating one on
+// every deploy (the generated one turned the workers.dev and preview URLs back on).
 {
   "name": "nwc-golf",
   "compatibility_date": "2026-11-19",
   "observability": {
     "enabled": true
   },
+
+  // The API Worker runs only for /api/*; everything else is served from the static files.
+  "main": "worker/index.js",
   "assets": {
-    "directory": "."
+    "directory": ".",
+    "run_worker_first": ["/api/*"]
   },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nwc-golf",
+      "database_id": "ba5c5e53-8670-4f00-aa5a-a56343dd0312",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // Cloudflare Access (Zero Trust) in front of /api/*. Neither value is secret.
+  // ACCESS_AUD is the Access application's Audience (AUD) tag (Access controls > Applications >
+  // the app > Additional settings > AUD tag). If the application is ever deleted and re-created,
+  // it gets a new tag and this must be updated, or the API refuses every sign-in.
+  "vars": {
+    "ACCESS_TEAM_DOMAIN": "https://nwc-golf.cloudflareaccess.com",
+    "ACCESS_AUD": "4d510a1ecbf220a324679b80bd8e8140e31ccc35a8fede3fe50e0418be008c8a"
+  },
+
   // Only serve the app at golf.nwc-analytics.com.
   "workers_dev": false,
   "preview_urls": false

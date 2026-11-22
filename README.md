@@ -23,6 +23,12 @@ The site is a Cloudflare Worker named `nwc-golf` that serves static files only (
 - `wrangler.jsonc` is the deploy config. It serves the repo folder and turns off the `workers.dev` and preview URLs, so the app is only at https://golf.nwc-analytics.com. Keep it committed: without it, Wrangler generates its own config on each deploy and turns those URLs back on.
 - `.assetsignore` lists repo files that must not be served (docs, tests, config). Add any new non-app file or folder to it.
 - Custom domain: in the Worker, **Settings > Domains & Routes** has `golf.nwc-analytics.com`.
+- API: `worker/index.js` runs only for `/api/*` (`run_worker_first`). It uses the D1 database `nwc-golf` (binding `DB`). Cloudflare Access (team `nwc-golf`, application "NWC Golf API", policy "Testers") protects `/api/*`; add testers' emails to that policy. The Worker checks the Access token itself using `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` in `wrangler.jsonc`. See `cloud-sync-plan.md`.
+- Database changes are not applied on push. After adding a file to `migrations/`, run it yourself (Node 22+, `npx wrangler login` once):
+  ```
+  npx wrangler d1 migrations apply nwc-golf --remote
+  ```
+  Apply it **before** pushing code that needs it.
 
 **When you change files, bump `VERSION` in `sw.js`** (for example `nwc-golf-v2`) so installed copies pick up the update.
 
@@ -37,7 +43,14 @@ The site is a Cloudflare Worker named `nwc-golf` that serves static files only (
 ```
 python3 -m http.server 8000
 ```
-Then open http://localhost:8000. (Offline mode only switches on over HTTPS, so it's off locally.)
+Then open http://localhost:8000. (Offline mode only switches on over HTTPS, so it's off locally.) This serves the app only; the sign-in box stays hidden because there's no API.
+
+With the API and a local copy of the database (needs Node 22+):
+```
+npx wrangler d1 migrations apply nwc-golf --local
+npx wrangler dev
+```
+Then open http://localhost:8787. Access can't run locally, so create a `.dev.vars` file (git-ignored, never deployed) with `DEV_EMAIL=you@example.com`; the Worker treats that as the signed-in user on localhost only.
 
 ## Tests
 
@@ -47,6 +60,11 @@ node tests/run.mjs path/to/session-*.csv path/to/shot_data_export_*.csv
 ```
 The first runs built-in checks (CSV parsing, filename dates, E6 import, units). Passing real exports also checks duplicate detection, club profiles and club picks against your data. CSVs are git-ignored, so keep them outside the repo or uncommitted.
 
+```
+node tests/worker.mjs
+```
+Checks the API Worker: the Cloudflare Access token check (bad signature, wrong audience or issuer, expired) and the routes, with a fake signing key and database.
+
 ## Files
 
 ```
@@ -55,6 +73,9 @@ css/app.css           styles
 js/parse.js           CSV parsing, Rapsodo column mapping, club names
 js/stats.js           mishit filter, club profiles, club picks
 js/store.js           local storage and backups
+js/account.js         sign-in status (Cloudflare Access)
+worker/index.js       API Worker (/api/*)
+migrations/           D1 database schema changes
 js/app.js             screens and events
 sw.js                 offline cache
 manifest.webmanifest  Home Screen install
