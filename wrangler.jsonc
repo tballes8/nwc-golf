@@ -1,0 +1,16 @@
+// Cloudflare Workers config: static assets only, no Worker script.
+// Committed so Workers Builds uses it instead of generating one on every deploy
+// (the generated one turned the workers.dev and preview URLs back on).
+{
+  "name": "nwc-golf",
+  "compatibility_date": "2026-11-19",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "."
+  },
+  // Only serve the app at golf.nwc-analytics.com.
+  "workers_dev": false,
+  "preview_urls": false
+}

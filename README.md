@@ -1,6 +1,6 @@
 # NWC Golf
 
-Club selection from your own Rapsodo launch monitor data. A static web app (no server, no build step) that runs on your phone and works offline.
+Club selection from your own shot data, exported from the Rapsodo R-Cloud website (https://golf-cloud.rapsodo.com/). A static web app (no server, no build step) that runs on your phone and works offline.
 
 Live at: https://golf.nwc-analytics.com
 
@@ -16,15 +16,13 @@ Live at: https://golf.nwc-analytics.com
 - Flags clubs with thin data and clubs that carry no farther than the next club down.
 - Stores everything on the phone (localStorage). Use **Download backup** now and then.
 
-## Deploy (Cloudflare Pages + GitHub)
+## Deploy (Cloudflare Workers static assets + GitHub)
 
-1. Create a GitHub repo (for example `nwc-golf`) and push this folder to it.
-2. In Cloudflare: **Workers & Pages > Create > Pages > Connect to Git**, then pick the repo.
-3. Build settings: framework preset **None**, build command **empty**, output directory **/**.
-4. Deploy. You get `nwc-golf.pages.dev`.
-5. In the project: **Custom domains > Set up a custom domain > `golf.nwc-analytics.com`**. Cloudflare adds the DNS record and HTTPS certificate.
+The site is a Cloudflare Worker named `nwc-golf` that serves static files only (no Worker script). Workers Builds is connected to GitHub `tballes8/nwc-golf` and runs `npx wrangler deploy` on every push to `main`.
 
-Every push to `main` redeploys.
+- `wrangler.jsonc` is the deploy config. It serves the repo folder and turns off the `workers.dev` and preview URLs, so the app is only at https://golf.nwc-analytics.com. Keep it committed: without it, Wrangler generates its own config on each deploy and turns those URLs back on.
+- `.assetsignore` lists repo files that must not be served (docs, tests, config). Add any new non-app file or folder to it.
+- Custom domain: in the Worker, **Settings > Domains & Routes** has `golf.nwc-analytics.com`.
 
 **When you change files, bump `VERSION` in `sw.js`** (for example `nwc-golf-v2`) so installed copies pick up the update.
 
@@ -59,7 +57,9 @@ js/store.js           local storage and backups
 js/app.js             screens and events
 sw.js                 offline cache
 manifest.webmanifest  Home Screen install
-_headers              Cloudflare Pages headers (keeps sw.js uncached)
+_headers              response headers (keeps sw.js uncached)
+wrangler.jsonc        Cloudflare deploy config
+.assetsignore         repo files that are not served
 fonts/                Barlow and Barlow Condensed (SIL Open Font License)
 icons/                app icons
 tests/run.mjs         tests

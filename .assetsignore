@@ -1,0 +1,13 @@
+# Files in the repo that are not part of the app and must not be served publicly.
+.git
+.gitignore
+.assetsignore
+.wrangler
+node_modules
+wrangler.jsonc
+package.json
+package-lock.json
+bun.lock
+bun.lockb
+*.md
+tests/
