@@ -66,6 +66,62 @@ const [dr] = buildProfiles([drives], { units: 'm' });
 assert.equal(dr.median, 180);
 assert.equal(dr.sideSd, null);
 
+// The bag: clubs taken out keep a profile but aren't picked and don't trigger gapping warnings.
+const bagShots = [['5h', 150], ['4i', 155], ['5i', 145], ['6i', 135], ['7i', 125]]
+  .flatMap(([clubCode, c]) => [0, 2, -2, 1, -1].map(d => ({ clubCode, carry: c + d, clubSpeed: 80, smash: 1.4 })));
+const bagSession = [{ id: 'b', date: '2026-11-01', shots: bagShots }];
+const everything = buildProfiles(bagSession);
+assert.ok(everything.every(p => p.inBag), 'no bag set: every club is in the bag');
+assert.ok(everything.find(p => p.code === '5h').gapWarning, '5h carries less than the 4i, so it is flagged');
+const myBag = buildProfiles(bagSession, { bag: ['5h', '5i', '6i', '7i'] });
+assert.equal(myBag.length, 5, 'clubs out of the bag still get a profile');
+assert.equal(myBag.find(p => p.code === '4i').inBag, false);
+assert.equal(myBag.find(p => p.code === '5h').gapWarning, undefined, 'no warning against a club not in the bag');
+assert.equal(pickClub(everything, 155, 4).best.profile.code, '4i');
+assert.notEqual(pickClub(myBag, 155, 4).best.profile.code, '4i', 'a club not in the bag is never picked');
+
+// Importing with a bag: new clubs are asked about, removed clubs' shots are left out.
+{
+  const { normalize } = await import('../js/store.js');
+  const { currentBag, setClub, newClubs, keepBagShots } = await import('../js/bag.js');
+  const file = (id, clubs) => ({ id, label: `File ${id}`, shots: clubs.map(clubCode => ({ clubCode, carry: 100 })) });
+
+  // First import ever: the bag becomes the clubs in the files, no questions; putters aren't bag clubs.
+  const d = normalize({});
+  let r = newClubs(d, [file('a', ['d', '7i', '7i', 'p'])]);
+  assert.deepEqual(r, { bagStarted: true, clubs: [] });
+  assert.deepEqual(d.settings.bag, ['d', '7i']);
+
+  // Later: a club in neither the bag nor the removed list is new, asked about once with its count and files.
+  const fresh = [file('b', ['d', '4i', '4i', 'lob wedge']), file('c', ['4i', 'p'])];
+  r = newClubs(d, fresh);
+  assert.equal(r.bagStarted, false);
+  assert.deepEqual(r.clubs, [
+    { code: '4i', shots: 3, files: ['File b', 'File c'] },
+    { code: 'lob wedge', shots: 1, files: ['File b'] },
+  ]);
+  // No to the 4 iron, yes to the other: 4 iron shots are left out, the putter stays.
+  setClub(d, '4i', false);
+  setClub(d, 'lob wedge', true);
+  const skipped = keepBagShots(d, fresh);
+  assert.deepEqual([...skipped], [['4i', 3]]);
+  assert.deepEqual(fresh.map(s => s.shots.map(x => x.clubCode)), [['d', 'lob wedge'], ['p']]);
+  assert.equal(fresh[0].id, 'b', 'the session keeps the ID from the whole file');
+  assert.ok(currentBag(d).includes('lob wedge'));
+  assert.deepEqual(d.settings.removedClubs, ['4i']);
+
+  // Next time the 4 iron is left out without asking; adding it back takes it off the removed list.
+  assert.deepEqual(newClubs(d, [file('e', ['4i'])]).clubs, []);
+  setClub(d, '4i', true);
+  assert.deepEqual(d.settings.removedClubs, []);
+  assert.deepEqual(keepBagShots(d, [file('f', ['4i'])]).size, 0);
+
+  // A bag set before removedClubs existed: clubs with shots outside the bag count as removed (no question).
+  const older = normalize({ settings: { bag: ['d'] }, sessions: [file('g', ['d', '4i'])] });
+  assert.deepEqual(older.settings.removedClubs, ['4i']);
+  assert.deepEqual(newClubs(older, [file('h', ['4i'])]).clubs, []);
+}
+
 const files = process.argv.slice(2);
 if (!files.length) { console.log('Unit checks passed. Pass CSV files to test real data.'); process.exit(0); }
 

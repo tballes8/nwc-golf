@@ -128,7 +128,7 @@ Every query filters on the signed-in `user_id`.
 - Steps: upload local changes made since the last sync, then download server changes since the last sync and merge them (newer `modifiedAt` wins).
 - First sign-in on a device that already has sessions uploads them. Sessions already on the server (same ID) aren't uploaded twice.
 - `userId: 'local'` on existing sessions becomes the signed-in user's ID.
-- Settings: "Distances in Rapsodo files" and "Shots used for each club" sync with the account. Target yardage and landing zone stay per device. **Not built yet** (needs a small table change); deferred from phase 2.
+- Settings: "Distances in Rapsodo files" and "Shots used for each club" sync with the account. Target yardage and landing zone stay per device. Built Nov 22 together with the bag (`settings.bag`): migration `0002_settings.sql` adds `settings` (JSON) and `settings_modified_at` to `users`; `GET/PUT /api/settings`; newer change wins, and a device that never changed its settings takes the account's.
 - Sessions screen: "Signed in as …, last synced 2 min ago", **Sync now**, **Sign out**.
 - Sign-in gate (added Nov 22): a device must sign in once before the app opens. The last signed-in account is remembered on the device (`nwcgolf.account` in localStorage), so after that the app opens straight away, offline too. An expired sign-in shows a notice on Sessions instead of locking the app mid-round. **Sign out** brings the gate back. The gate is a front door, not a lock (the app's files are public); the data on the server is what Access and the Worker protect. The whole site is deliberately not behind Access: that would block the Home Screen install files and could replace the cached app with a login page offline.
 - Download backup stays.

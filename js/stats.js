@@ -50,8 +50,11 @@ function daysBetween(a, b) { return Math.round((new Date(a) - new Date(b)) / 864
  * window: 'recent' (default) or 'all'.
  * units: 'yd' or 'm', what Rapsodo files contain. Sessions that record their own units
  * (E6, converted to yards at import) ignore it.
+ * bag: club codes the golfer carries, or null for every club with shots. Every club still
+ * gets a profile; ones not in the bag are marked inBag: false and left out of the gapping
+ * warnings (and of club picks, see pickClub).
  */
-export function buildProfiles(sessions, { window = 'recent', units = 'yd', ...o } = {}) {
+export function buildProfiles(sessions, { window = 'recent', units = 'yd', bag = null, ...o } = {}) {
   const opts = { ...DEFAULTS, ...o };
 
   // Group shots by club, keeping their session.
@@ -120,13 +123,15 @@ export function buildProfiles(sessions, { window = 'recent', units = 'yd', ...o 
       clubSpeed: quantile(good.map(s => s.clubSpeed).filter(x => x != null).sort((a, b) => a - b), 0.5),
       sessions: chosen.map(g => ({ id: g.session.id, date: g.session.date, shots: g.shots.length })),
       confidence: good.length >= 20 ? 'solid' : good.length >= 10 ? 'thin' : 'very thin',
+      inBag: !bag || bag.includes(code),
     });
   }
   profiles.sort((a, b) => a.order - b.order);
 
-  // Flag clubs that carry shorter than a club meant to go less far.
-  for (let i = 0; i < profiles.length - 1; i++) {
-    const longer = profiles[i], shorter = profiles[i + 1];
+  // Flag clubs that carry shorter than a club meant to go less far (clubs in the bag only).
+  const carried = profiles.filter(p => p.inBag);
+  for (let i = 0; i < carried.length - 1; i++) {
+    const longer = carried[i], shorter = carried[i + 1];
     if (longer.order < 200 && longer.median <= shorter.median) {
       longer.gapWarning = `${longer.name} is carrying no farther than your ${shorter.name.toLowerCase()}.`;
     }
@@ -165,7 +170,7 @@ export function pickClub(profiles, target, w = 8, reach = 20, minShots = 5) {
   // A club needs a few full swings on record before it can be recommended;
   // one lucky shot shouldn't make it the answer.
   const scored = profiles
-    .filter(p => p.order < 200 && p.goodShots >= minShots)
+    .filter(p => p.inBag !== false && p.order < 200 && p.goodShots >= minShots)
     .map(p => ({ profile: p, ...chances(p, target, w), gap: Math.abs(p.median - target) }));
   // Only clubs whose typical carry is near the target compete; a wild club with a
   // huge spread shouldn't win just because its misses happen to cover the number.

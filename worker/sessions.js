@@ -8,7 +8,9 @@
 // - Deleting keeps the session row as a marker (deleted = 1) so other devices learn about
 //   it, and removes its shots.
 // - Shots never change after import. They're written when a session first arrives (or
-//   comes back after a delete) and ignored on later uploads.
+//   comes back after a delete) and ignored on later uploads. Two devices can hold different
+//   shots for the same session (shots with clubs not in the bag are left out at import, and
+//   the bag may not have synced yet); the server's shots win, and it sends them back.
 // - A fresh import (a device's copy that was never synced or edited) never overwrites a
 //   session the server already has, even though its import time is newer: the same file
 //   imported on a second device mustn't undo edits made on the first. It can bring back a
@@ -21,7 +23,7 @@ const MAX_BODY = 1_000_000; // bytes; a 300-shot session is about 100 KB
 const MAX_SHOTS = 2000;
 const PAGE = 25;            // sessions per download page
 
-const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/; // as made by Date.toISOString()
+export const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/; // as made by Date.toISOString()
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const SOURCES = new Set(['rapsodo-mlm2pro', 'e6-connect', 'app']);
 const KINDS = new Set(['range', 'sim', 'course']);
@@ -51,8 +53,14 @@ export async function putSession(db, userId, id, request) {
   const row = await db.prepare(`SELECT ${SESSION_COLUMNS} FROM sessions WHERE user_id = ? AND id = ?`).bind(userId, id).first();
   if (row.modified_at === s.modifiedAt && !row.deleted) return json({ applied: true });
   // The server kept its own version (newer, or this was a fresh import of a session it
-  // already has). Send it back so the device can take it. Shots are the same, so not sent.
-  return json({ applied: false, session: toClientSession(row) });
+  // already has). Send it back, shots included, so the device can take it.
+  let shots;
+  if (!row.deleted) {
+    const { results } = await db.prepare(`SELECT ${Object.values(SHOT_COLUMNS).join(', ')}, extra FROM shots WHERE user_id = ? AND session_id = ? ORDER BY n`)
+      .bind(userId, id).all();
+    shots = results.map(toClientShot);
+  }
+  return json({ applied: false, session: toClientSession(row, shots) });
 }
 
 export async function deleteSession(db, userId, id, request) {
@@ -120,15 +128,16 @@ const UPSERT_SESSION = `
 // (In ON CONFLICT, "excluded." means the row being inserted; "excluded.excluded" is its excluded column.)
 
 // All shots in one statement, from a JSON array bound as ?3 (D1 caps bound parameters per
-// statement, and statements per request on the free plan). Skipped when the session is
-// deleted; existing shots are kept as they are (shots never change).
+// statement, and statements per request on the free plan). Only when the session is live and
+// has no shots yet (new, or back after a delete): shots already stored never change.
 const INSERT_SHOTS = `
   INSERT OR IGNORE INTO shots (user_id, session_id, n, ${Object.values(SHOT_COLUMNS).join(', ')}, extra)
   SELECT ?1, ?2, CAST(j.key AS INTEGER),
          ${Object.keys(SHOT_COLUMNS).map(k => `json_extract(j.value, '$.${k}')`).join(', ')},
          json_extract(j.value, '$.extra')
   FROM json_each(?3) AS j
-  WHERE EXISTS (SELECT 1 FROM sessions WHERE user_id = ?1 AND id = ?2 AND deleted = 0)`;
+  WHERE EXISTS (SELECT 1 FROM sessions WHERE user_id = ?1 AND id = ?2 AND deleted = 0)
+    AND NOT EXISTS (SELECT 1 FROM shots WHERE user_id = ?1 AND session_id = ?2)`;
 
 // ---- Checking what devices send -----------------------------------------------
 

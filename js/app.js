@@ -1,12 +1,14 @@
 import { parseSessionFile, clubInfo, sessionLabel } from './parse.js';
 import { buildProfiles, pickClub, DEFAULTS } from './stats.js';
-import { load, save, addSessions, backupBlob, readBackup, requestPersistence, touch, deleteSession, sortSessions } from './store.js';
+import { load, save, addSessions, backupBlob, readBackup, requestPersistence, touch, touchSettings, deleteSession, sortSessions } from './store.js';
 import { checkAccount, signOut, SIGN_IN_URL, storedAccount, rememberAccount, forgetAccount } from './account.js';
 import { syncNow, clearDevice } from './sync.js';
+import { byOrder, shotCounts, currentBag, setClub, newClubs, keepBagShots } from './bag.js';
 
 const $ = sel => document.querySelector(sel);
 const data = load();
-let profiles = [];
+let allProfiles = []; // every club with full swings on record
+let profiles = [];    // the clubs in the bag: what Caddie picks from and the chart shows
 
 const fmt = n => Math.round(n).toString();
 const pct = n => `${Math.round(n * 100)}%`;
@@ -26,7 +28,8 @@ function persist() {
 
 function recompute() {
   const usable = data.sessions.filter(s => s.date);
-  profiles = buildProfiles(usable, { window: data.settings.window, units: data.settings.units });
+  allProfiles = buildProfiles(usable, { window: data.settings.window, units: data.settings.units, bag: data.settings.bag });
+  profiles = allProfiles.filter(p => p.inBag);
 }
 
 // ---------- Bag chart ----------
@@ -76,12 +79,14 @@ function renderCaddie() {
   $('#zone-out').textContent = `± ${zone} yd`;
   const el = $('#answer');
 
-  if (!profiles.length) {
-    el.innerHTML = `<div class="empty"><p>Import a few sessions to get club picks from your own shots.</p><button class="btn primary" data-go="sessions">Import sessions</button></div>`;
+  const { best, backup } = profiles.length ? pickClub(profiles, target, zone) : {};
+  if (!best) {
+    el.innerHTML = !allProfiles.length
+      ? `<div class="empty"><p>Import a few sessions to get club picks from your own shots.</p><button class="btn primary" data-go="sessions">Import sessions</button></div>`
+      : `<div class="empty"><p>None of the clubs in your bag has 5 full swings on record yet, so there’s nothing to pick from. Hit a few more, or check your bag.</p><button class="btn primary" data-go="bag">Your bag</button></div>`;
     bagChart($('#bag-chart-caddie'), null, null);
     return;
   }
-  const { best, backup } = pickClub(profiles, target, zone);
   const p = best.profile;
   const thin = p.confidence !== 'solid'
     ? `<p class="warn">Only ${p.goodShots} good ${p.name.toLowerCase()} shots on record. Hit more with it before trusting this pick.</p>` : '';
@@ -158,19 +163,46 @@ caddieChart.addEventListener('pointercancel', endFlagDrag);
 caddieChart.addEventListener('lostpointercapture', endFlagDrag);
 
 // ---------- Bag ----------
-function renderBag() {
-  bagChart($('#bag-chart'), null, null);
-  const list = $('#club-list');
-  if (!profiles.length) {
-    $('#bag-lede').textContent = 'No clubs yet. Import sessions to build your bag.';
-    list.innerHTML = '';
-    return;
-  }
-  const total = profiles.reduce((s, p) => s + p.goodShots, 0);
-  $('#bag-lede').textContent = `${profiles.length} clubs from ${total} full swings. Carry only, in yards. Mishits and partial swings (chips, pitches) are left out.`;
-  list.innerHTML = profiles.map(p => {
-    const conf = p.confidence === 'solid' ? '' : p.confidence === 'thin' ? 'conf-thin' : 'conf-very';
-    return `
+// The clubs the golfer carries; the rules are in js/bag.js. Clubs taken out keep the shots
+// already on record but are left out of club picks, the chart and the gapping warnings, and
+// their shots in new files aren't imported.
+
+// Clubs offered in the bag editor, besides any club that has shots.
+const STANDARD_CLUBS = ['d', '3w', '4w', '5w', '7w', '9w', '2h', '3h', '4h', '5h', '6h', '7h',
+  '2i', '3i', '4i', '5i', '6i', '7i', '8i', '9i', 'pw', 'gw', 'aw', 'sw', 'lw'];
+const MAX_CLUBS = 14; // Rules of Golf 4.1b
+const CLUB_GROUPS = [['Driver and woods', o => o < 30], ['Hybrids', o => o < 50], ['Irons', o => o < 70], ['Wedges', o => o < 150], ['Other', () => true]];
+
+function toggleClub(code) {
+  const adding = !currentBag(data).includes(code);
+  setClub(data, code, adding);
+  touchSettings(data);
+  persist(); refresh(); scheduleSync();
+  status(`${clubInfo(code).name} ${adding ? 'added to' : 'taken out of'} your bag.`);
+  // Keep keyboard focus on the club just toggled (the editor was redrawn).
+  document.querySelector(`#bag-editor [data-club="${CSS.escape(code)}"]`)?.focus();
+}
+
+function renderBagEditor() {
+  const el = $('#bag-editor');
+  if (el.hidden) return;
+  const counts = shotCounts(data), bag = currentBag(data);
+  const codes = [...new Set([...STANDARD_CLUBS, ...counts.keys(), ...bag])].filter(c => clubInfo(c).order < 200).sort(byOrder);
+  const groups = CLUB_GROUPS.map(([title, test]) => [title, codes.filter(c => CLUB_GROUPS.find(([, t]) => t(clubInfo(c).order))[1] === test)]);
+  el.innerHTML = `
+    <p>Tap a club to add it to your bag or take it out. <strong>${bag.length}</strong> club${bag.length === 1 ? '' : 's'} in your bag; small numbers are shots on record.
+    Shots with clubs you take out aren’t imported from new files.</p>
+    ${bag.length > MAX_CLUBS ? `<p class="warn">That’s ${bag.length} clubs. The Rules of Golf allow ${MAX_CLUBS} in a round.</p>` : ''}
+    ${groups.filter(([, list]) => list.length).map(([title, list]) => `
+      <h2>${title}</h2>
+      <div class="chips">
+        ${list.map(c => `<button class="chip" data-club="${esc(c)}" aria-pressed="${bag.includes(c)}">${esc(shortName({ name: clubInfo(c).name }))}${counts.get(c) ? `<small>${counts.get(c)}</small>` : ''}</button>`).join('')}
+      </div>`).join('')}`;
+}
+
+function clubCard(p) {
+  const conf = p.confidence === 'solid' ? '' : p.confidence === 'thin' ? 'conf-thin' : 'conf-very';
+  return `
       <article class="club">
         <div class="club-head"><h2>${esc(p.name)}</h2><span class="big">${fmt(p.median)}<small>yd</small></span></div>
         <dl>
@@ -183,7 +215,37 @@ function renderBag() {
         </dl>
         ${p.gapWarning ? `<p class="warn">${esc(p.gapWarning)}</p>` : ''}
       </article>`;
-  }).join('');
+}
+
+function renderBag() {
+  renderBagEditor();
+  bagChart($('#bag-chart'), null, null);
+  const bag = currentBag(data);
+  const noSwings = bag.filter(c => !profiles.some(p => p.code === c)); // in the bag, nothing on record yet
+  const total = profiles.reduce((s, p) => s + p.goodShots, 0);
+  $('#bag-lede').textContent = !profiles.length && !noSwings.length
+    ? 'No clubs yet. Import sessions to build your bag.'
+    : `${bag.length} club${bag.length === 1 ? '' : 's'} in your bag, from ${total} full swings. Carry only, in yards. Mishits and partial swings (chips, pitches) are left out.`;
+  $('#club-list').innerHTML = [
+    ...profiles.map(p => [p.order, clubCard(p)]),
+    ...noSwings.map(c => [clubInfo(c).order, `
+      <article class="club no-swings">
+        <div class="club-head"><h2>${esc(clubInfo(c).name)}</h2><span class="big">–</span></div>
+        <p class="hint">No full swings on record yet.</p>
+      </article>`]),
+  ].sort((a, b) => a[0] - b[0]).map(x => x[1]).join('');
+
+  const out = allProfiles.filter(p => !p.inBag);
+  $('#not-in-bag').innerHTML = !out.length ? '' : `
+    <h2>Not in your bag</h2>
+    <p class="hint">Their shots on record are kept but left out of club picks, the chart and the gapping warnings. Shots with these clubs in new files aren’t imported.</p>
+    <ul>
+      ${out.map(p => `
+        <li>
+          <span><strong>${esc(p.name)}</strong> <span class="hint">${fmt(p.median)} yd, ${p.goodShots} full swing${p.goodShots === 1 ? '' : 's'}</span></span>
+          <button class="btn quiet" data-club="${esc(p.code)}">Add back</button>
+        </li>`).join('')}
+    </ul>`;
 }
 
 // ---------- Sessions ----------
@@ -343,28 +405,59 @@ async function runSync() {
   if (syncAgain) { syncAgain = false; runSync(); }
 }
 
+/** "New club found" question. Resolves true for Yes. It can't be dismissed without an answer. */
+function askNewClub({ code, shots, files }) {
+  const dlg = $('#new-club');
+  $('#new-club-text').textContent =
+    `Found ${clubInfo(code).name}: ${shots} shot${shots === 1 ? '' : 's'} in ${files.length === 1 ? files[0] : `${files.length} files`}.`;
+  return new Promise(resolve => {
+    dlg.addEventListener('close', () => resolve(dlg.returnValue === 'yes'), { once: true });
+    dlg.returnValue = '';
+    dlg.showModal();
+  });
+}
+
 async function importFiles(fileList) {
-  const sessions = [], errors = [];
-  let restored = 0;
+  const restoredSessions = [], fromFiles = [], errors = [];
+  let restored = 0, settingsChanged = false;
   for (const f of fileList) {
     const text = await f.text();
     if (/\.json$/i.test(f.name) || text.trim().startsWith('{')) {
       const b = readBackup(text);
       if (!b) { errors.push(`${f.name} isn't a backup from this app.`); continue; }
-      sessions.push(...b.sessions); restored++;
-      if (b.settings) Object.assign(data.settings, b.settings);
+      restoredSessions.push(...b.sessions); restored++; // a backup is restored as it is
+      if (b.settings) { Object.assign(data.settings, b.settings); settingsChanged = true; }
       continue;
     }
     const res = parseSessionFile(text, f.name);
-    res.ok ? sessions.push(res.session) : errors.push(res.error);
+    res.ok ? fromFiles.push(res.session) : errors.push(res.error);
   }
-  const { added, duplicates } = addSessions(data, sessions);
+
+  // Clubs: ask about clubs that are new to the bag, then leave out shots with clubs not in it.
+  const stored = new Set(data.sessions.map(s => s.id));
+  const fresh = fromFiles.filter(s => !stored.has(s.id));
+  const { bagStarted, clubs } = newClubs(data, fresh);
+  if (bagStarted) settingsChanged = true;
+  for (const club of clubs) {
+    setClub(data, club.code, await askNewClub(club));
+    settingsChanged = true;
+  }
+  const skipped = keepBagShots(data, fresh);
+  const allSkipped = fresh.filter(s => !s.shots.length).length; // every shot was a club not in the bag
+  if (settingsChanged) touchSettings(data);
+
+  const { added, duplicates } = addSessions(data, [...restoredSessions, ...fromFiles.filter(s => s.shots.length)]);
   persist();
   refresh();
-  if (added) scheduleSync(500);
+  if (added || settingsChanged) scheduleSync(500);
   const parts = [];
   if (added) parts.push(`Imported ${added} session${added === 1 ? '' : 's'}`);
   if (duplicates) parts.push(`${duplicates} already imported`);
+  if (skipped.size) {
+    const n = [...skipped.values()].reduce((a, b) => a + b, 0);
+    parts.push(`Left out ${n} shot${n === 1 ? '' : 's'} with clubs not in your bag (${[...skipped.keys()].map(c => clubInfo(c).name).join(', ')})`);
+  }
+  if (allSkipped) parts.push(`${allSkipped} file${allSkipped === 1 ? ' had' : 's had'} only clubs not in your bag`);
   if (restored && !added) parts.push('Backup had nothing new');
   if (errors.length) parts.push(errors[0]);
   status(parts.join('. ') || 'Nothing imported.');
@@ -425,6 +518,14 @@ document.addEventListener('click', e => {
       t.dataset.confirm = '1'; t.textContent = 'Tap to delete';
       setTimeout(() => { if (t.isConnected) { t.dataset.confirm = ''; t.textContent = 'Delete'; } }, 4000);
     }
+  } else if (t.dataset.club) {
+    toggleClub(t.dataset.club);
+  } else if (t.id === 'bag-edit') {
+    const ed = $('#bag-editor');
+    ed.hidden = !ed.hidden;
+    t.textContent = ed.hidden ? 'Edit bag' : 'Done';
+    t.setAttribute('aria-expanded', String(!ed.hidden));
+    renderBagEditor();
   } else if ('recheck' in t.dataset) {
     renderGate('checking');
     checkSignIn();
@@ -448,11 +549,12 @@ document.addEventListener('click', e => {
     status('Backup downloaded.');
   }
 });
+$('#new-club').addEventListener('cancel', e => e.preventDefault()); // Esc: an answer is needed
 $('#target').addEventListener('change', e => setTarget(+e.target.value));
 $('#target').addEventListener('focus', e => e.target.select());
 $('#file').addEventListener('change', async e => { await importFiles([...e.target.files]); e.target.value = ''; });
-$('#units').addEventListener('change', e => { data.settings.units = e.target.value; persist(); refresh(); });
-$('#window').addEventListener('change', e => { data.settings.window = e.target.value; persist(); refresh(); });
+$('#units').addEventListener('change', e => { data.settings.units = e.target.value; touchSettings(data); persist(); refresh(); scheduleSync(); });
+$('#window').addEventListener('change', e => { data.settings.window = e.target.value; touchSettings(data); persist(); refresh(); scheduleSync(); });
 $('#session-list').addEventListener('change', e => {
   const id = e.target.dataset.date;
   if (!id || !e.target.value) return;

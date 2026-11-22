@@ -6,9 +6,18 @@ const KEY = 'nwcgolf.v1';
 const EMPTY = () => ({
   version: 1,
   sessions: [],
-  settings: { units: 'yd', window: 'recent', zone: 8, target: 150 },
+  // bag: club codes the golfer carries; null = every club with shots (until the bag is edited).
+  // removedClubs: clubs taken out of the bag or declined at import; their shots aren't imported.
+  // units, window, bag and removedClubs sync with the account; zone and target stay on this device.
+  settings: { units: 'yd', window: 'recent', zone: 8, target: 150, bag: null, removedClubs: [] },
   deleted: [],  // sessions deleted here but not yet deleted on the server: [{ id, at }]
-  sync: { userId: null, cursor: '', lastSyncAt: null }, // userId: the account this device's sessions belong to
+  sync: {
+    userId: null,            // the account this device's sessions belong to
+    cursor: '',              // where the last download stopped
+    lastSyncAt: null,
+    settingsModifiedAt: null, // last change to the synced settings on this device (null = never changed here)
+    settingsUploadedAt: null, // the settingsModifiedAt last uploaded
+  },
 });
 
 /** Fill in fields added since older versions of the app, so stored data is sync-ready. */
@@ -16,6 +25,12 @@ export function normalize(data) {
   const base = EMPTY();
   const out = { ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) }, sync: { ...base.sync, ...(data.sync || {}) } };
   out.deleted = Array.isArray(data.deleted) ? data.deleted : [];
+  // A bag edited before removedClubs existed: the clubs taken out are the ones with shots
+  // that aren't in it (otherwise the next import would ask about them as new clubs).
+  if (data.settings?.bag && !Array.isArray(data.settings.removedClubs)) {
+    const inBag = new Set(data.settings.bag);
+    out.settings.removedClubs = [...new Set(out.sessions.flatMap(s => s.shots.map(x => x.clubCode)))].filter(c => !inBag.has(c));
+  }
   for (const s of out.sessions) {
     // Sessions from before sync: treat the import time as the last change.
     if (!s.modifiedAt) s.modifiedAt = s.importedAt || new Date().toISOString();
@@ -51,6 +66,11 @@ export async function requestPersistence() {
 /** Newest session first. */
 export function sortSessions(data) {
   data.sessions.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
+/** Record that the synced settings (units, window, bag) changed here, so sync uploads them. */
+export function touchSettings(data) {
+  data.sync.settingsModifiedAt = new Date().toISOString();
 }
 
 /** Record that a session changed here, so sync uploads it (the newer change wins). */

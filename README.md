@@ -14,9 +14,11 @@ Live at: https://golf.nwc-analytics.com
 - Uses recent sessions by default: the last 120 days of each club's data, reaching further back until the club has 15 good shots. Switch to "All sessions" on the Sessions screen.
 - Caddie screen: enter yards to carry and get the club with the best chance of landing inside the landing zone (±8 yd by default), plus a second choice.
 - Flags clubs with thin data and clubs that carry no farther than the next club down.
+- Your bag: **Edit bag** on the Bag screen picks the clubs you carry. Clubs taken out (say, a 4 iron a simulator app chose for you) keep the shots already on record but are left out of club picks, the chart and the gapping warnings; **Add back** returns them. Until you edit it (or until your first import), the bag is every club you've hit. Warns above 14 clubs.
+- Importing with a bag (`js/bag.js`): shots with clubs you took out aren't imported. A club that's in a file but in neither your bag nor the taken-out list brings up **New club found**: Yes adds it to the bag with its shots; No leaves its shots out and puts it on the taken-out list, so you aren't asked again. Your first import sets the bag without asking. Backups restore as they are. Shots left out at import are never stored, so adding the club back later doesn't bring them in from files already imported.
 - Stores everything on the phone (localStorage). Use **Download backup** now and then.
 - Invited testers only: each device signs in once (email code via Cloudflare Access) before the app opens. After that it opens offline too; Sign out is on the Sessions screen.
-- Syncs sessions between your devices through the account (Cloudflare D1): at start, a couple of seconds after an import or edit, when back online or back in the foreground, and with **Sync now**. The phone stays the working copy, so everything works offline; the newer change wins.
+- Syncs sessions, your bag, and the two Sessions-screen settings between your devices through the account (Cloudflare D1); landing zone and target yardage stay per device. Syncs at start, a couple of seconds after an import or edit, when back online or back in the foreground, and with **Sync now**. The phone stays the working copy, so everything works offline; the newer change wins.
 
 ## Deploy (Cloudflare Workers static assets + GitHub)
 
@@ -78,8 +80,10 @@ js/stats.js           mishit filter, club profiles, club picks
 js/store.js           local storage and backups
 js/account.js         sign-in status (Cloudflare Access)
 js/sync.js            sync with the account (upload, download, merge)
+js/bag.js             the bag: clubs carried, clubs taken out, new clubs at import
 worker/index.js       API Worker (/api/*): routes and the Access token check
 worker/sessions.js    sessions API
+worker/settings.js    settings API (bag, units, window)
 worker/http.js        shared response helpers
 migrations/           D1 database schema changes
 js/app.js             screens and events

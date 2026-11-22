@@ -64,12 +64,17 @@
 
     <!-- Bag -->
     <section id="view-bag" class="view" hidden aria-labelledby="t-bag">
-      <h1 id="t-bag">Your bag</h1>
+      <div class="bag-title">
+        <h1 id="t-bag">Your bag</h1>
+        <button class="btn quiet" id="bag-edit" aria-expanded="false" aria-controls="bag-editor">Edit bag</button>
+      </div>
+      <div id="bag-editor" class="bag-editor" hidden></div>
       <p class="lede" id="bag-lede"></p>
       <figure class="bag">
         <div id="bag-chart"></div>
       </figure>
       <div id="club-list" class="club-list"></div>
+      <div id="not-in-bag" class="not-in-bag"></div>
     </section>
 
     <!-- Sessions -->
@@ -110,6 +115,19 @@
       </div>
     </section>
   </main>
+
+  <!-- Asked during an import for each club that isn't in the bag yet (see importFiles in js/app.js) -->
+  <dialog id="new-club" class="dialog" aria-labelledby="new-club-title" aria-describedby="new-club-text">
+    <form method="dialog">
+      <h2 id="new-club-title">New club found</h2>
+      <p id="new-club-text"></p>
+      <p>Should I add this club to your bag? If not, its shots in this import are left out.</p>
+      <div class="dialog-actions">
+        <button class="btn" value="no">No</button>
+        <button class="btn primary" value="yes" autofocus>Yes</button>
+      </div>
+    </form>
+  </dialog>
 
   <nav class="tabs" aria-label="Sections">
     <button data-view="caddie" aria-current="page">Caddie</button>

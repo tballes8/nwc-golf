@@ -127,6 +127,35 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .club dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 8px 0 0; font-size: 15px; }
 .club dt { color: var(--ink-2); }
 .club dd { margin: 0; }
+.club.no-swings .big { color: var(--ink-2); }
+.club.no-swings .hint { margin-top: 4px; }
+
+/* "New club found" question */
+.dialog { border: 0; border-radius: var(--r-big); padding: 20px; width: min(420px, calc(100vw - 32px)); color: var(--ink); background: var(--paper); box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
+.dialog::backdrop { background: rgba(22, 32, 26, .55); }
+.dialog h2 { font: 700 30px/1.05 var(--display); margin: 0 0 10px; }
+.dialog p { margin: 0 0 10px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+.dialog-actions .btn { min-width: 96px; }
+
+/* Bag editor */
+.bag-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.bag-editor { padding: 4px 0 16px; border-bottom: 1px solid var(--rough); }
+.bag-editor > p { margin: 8px 0 0; font-size: 15px; }
+.bag-editor h2 { font: 600 15px/1 var(--body); color: var(--ink-2); margin: 16px 0 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 56px; min-height: 44px; padding: 0 14px;
+  border: 2px solid var(--rough); border-radius: 22px; background: var(--paper); color: var(--ink-2);
+  font: 600 19px/1 var(--display); cursor: pointer;
+}
+.chip small { font: 500 12px/1 var(--body); }
+.chip[aria-pressed="true"] { background: var(--fairway); border-color: var(--fairway); color: #fff; }
+.chip[aria-pressed="true"] small { color: #CFE3D6; }
+.not-in-bag { margin-top: 24px; }
+.not-in-bag h2 { font: 700 24px/1 var(--display); margin: 0; }
+.not-in-bag ul { list-style: none; margin: 10px 0 0; padding: 0; }
+.not-in-bag li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--rough); }
 .conf-thin { color: #8A5A00; }
 .conf-very { color: var(--flag); }
 

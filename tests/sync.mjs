@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { testDB, fakeAccess, TEAM, AUD } from './helpers.mjs';
 import { parseSessionFile } from '../js/parse.js';
-import { normalize, addSessions, touch, deleteSession, readBackup } from '../js/store.js';
+import { normalize, addSessions, touch, touchSettings, deleteSession, readBackup } from '../js/store.js';
 import { syncNow, clearDevice, SyncError } from '../js/sync.js';
 import { buildProfiles } from '../js/stats.js';
 
@@ -131,11 +131,55 @@ await syncNow(restored, golferId);
 assert.equal(restored.sessions.length, 2);
 assert.equal(env.DB.sqlite.prepare('SELECT count(*) AS n FROM sessions WHERE deleted = 0').get().n, 2);
 
+// 8b. The bag and Rapsodo units follow the account; target yardage and landing zone don't.
+await tick();
+pc.settings.bag = ['d', '3w', '4h', '5i', '7i', 'aw']; pc.settings.zone = 12; touchSettings(pc);
+await syncNow(pc, golferId);
+assert.equal(pc.sync.settingsUploadedAt, pc.sync.settingsModifiedAt);
+r = await syncNow(phone, golferId);
+assert.equal(r.pulled, 1, 'settings came down');
+assert.deepEqual(phone.settings.bag, pc.settings.bag);
+assert.equal(phone.settings.zone, 8, 'landing zone stays per device');
+await tick();
+phone.settings.bag = [...phone.settings.bag, 'lw']; touchSettings(phone);
+phone.settings.units = 'm'; // same change
+await syncNow(phone, golferId);
+await syncNow(pc, golferId);
+assert.ok(pc.settings.bag.includes('lw'));
+assert.equal(pc.settings.units, 'm');
+// An older change made offline loses to the newer one already on the server.
+const staleAt = new Date(Date.parse(pc.sync.settingsModifiedAt) - 60000).toISOString();
+tablet.settings.bag = ['d']; tablet.sync.settingsModifiedAt = staleAt;
+await syncNow(tablet, golferId);
+assert.ok(tablet.settings.bag.includes('lw'), "the tablet's older bag is replaced by the newer one");
+// A brand-new device takes the account's settings instead of overwriting them with its defaults.
+const fresh = device();
+await syncNow(fresh, golferId);
+assert.deepEqual(fresh.settings.bag, pc.settings.bag);
+phone.settings.units = 'yd'; touchSettings(phone); await syncNow(phone, golferId); await syncNow(pc, golferId);
+
+// 8c. A device whose bag hadn't synced keeps a shot the account left out: the server's shots win.
+await tick();
+const PRACTICE = 'shot_data_export_2026-11-21T01_00_00.000000Z.csv';
+const practiceCsv = [E6.split('\n')[0], 'Range,1,1,Driver,80,200,180,40,120,2400,300,-1.5,12', 'Range,1,2,4 Iron,75,160,150,30,105,4000,100,0,14'].join('\n');
+const parsed = () => parseSessionFile(practiceCsv, PRACTICE).session;
+const pcFile = parsed();
+pcFile.shots = pcFile.shots.filter(x => x.clubCode !== '4i'); // the PC's bag left the 4 iron out
+addSessions(pc, [pcFile]);
+await syncNow(pc, golferId);
+const laggard = device(); // imports before its first sync, so it has no bag yet and keeps the 4 iron
+addSessions(laggard, [parsed()]);
+assert.equal(laggard.sessions[0].shots.length, 2);
+await syncNow(laggard, golferId);
+assert.deepEqual(find(laggard, pcFile.id).shots.map(x => x.clubCode), ['d'], 'takes the account’s shots');
+assert.equal(env.DB.sqlite.prepare('SELECT count(*) AS n FROM shots WHERE session_id = ?').get(pcFile.id).n, 1);
+
 // 9. Someone else signing in on this device doesn't get (or overwrite) these sessions.
 signedInAs = 'friend@example.com';
 const friendId = await me();
 assert.deepEqual(await syncNow(phone, friendId), { state: 'other-account' });
 clearDevice(phone);
+assert.equal(phone.settings.bag, null, "the previous account's bag is cleared too");
 r = await syncNow(phone, friendId);
 assert.deepEqual(r, { state: 'ok', pushed: 0, pulled: 0 }, "the friend's account starts empty");
 signedInAs = 'golfer@example.com';
@@ -148,6 +192,7 @@ signedInAs = 'golfer@example.com';
 // 11. Old data from before sync (no modifiedAt) is made sync-ready.
 const old = normalize({ sessions: [{ id: 'x1', importedAt: '2026-10-01T10:00:00.000Z', shots: [] }] });
 assert.equal(old.sessions[0].modifiedAt, '2026-10-01T10:00:00.000Z');
-assert.deepEqual(old.sync, { userId: null, cursor: '', lastSyncAt: null });
+assert.deepEqual(old.sync, { userId: null, cursor: '', lastSyncAt: null, settingsModifiedAt: null, settingsUploadedAt: null });
+assert.equal(old.settings.bag, null);
 
 console.log('Sync checks passed.');

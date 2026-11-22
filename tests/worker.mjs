@@ -108,7 +108,7 @@ assert.deepEqual(await (await put('abc123', session({ date: '2026-11-18', dateGu
 res = await (await put('abc123', session({ date: '2026-11-01', modifiedAt: T(3) }))).json();
 assert.equal(res.applied, false);
 assert.equal(res.session.date, '2026-11-18');
-assert.equal(res.session.shots, undefined, 'shots not sent back');
+assert.equal(res.session.shots.length, 2, "the server's shots come back with its version");
 page = await list(page.cursor);
 assert.equal(page.sessions.length, 1, 'the edit shows up after the cursor');
 assert.equal(page.sessions[0].date, '2026-11-18');
@@ -118,6 +118,16 @@ assert.equal(env.DB.sqlite.prepare('SELECT count(*) AS n FROM shots').get().n, 2
 res = await (await put('abc123', session({ fresh: true, importedAt: T(9), modifiedAt: T(9) }))).json();
 assert.equal(res.applied, false);
 assert.equal(res.session.date, '2026-11-18', 'the edit made elsewhere survives');
+
+// Shots already stored never change, even when a device sends a different set (a device that
+// kept shots another left out of the bag): nothing is added, and the server's shots come back.
+const extraShot = { clubCode: '4i', carry: 150 };
+res = await (await put('abc123', session({ date: '2026-11-18', dateGuessed: false, modifiedAt: T(5), shots: [...session().shots, extraShot] }))).json(); // same version, more shots
+assert.equal(res.applied, true);
+assert.equal(env.DB.sqlite.prepare('SELECT count(*) AS n FROM shots').get().n, 2, 'no shot added to a stored session');
+res = await (await put('abc123', session({ fresh: true, importedAt: T(9), modifiedAt: T(9), shots: [extraShot] }))).json();
+assert.equal(res.applied, false);
+assert.deepEqual(res.session.shots.map(x => x.clubCode), ['d', 'aw']);
 
 // Delete: older deletes are ignored; a newer one marks it deleted and removes the shots.
 await del('abc123', T(4));
@@ -176,5 +186,23 @@ const tooBig = await worker.fetch(new Request('https://golf.nwc-analytics.com/ap
   method: 'PUT', headers: { ...golfer, 'content-type': 'application/json' }, body: 'x'.repeat(1_000_001),
 }), env);
 assert.equal(tooBig.status, 413);
+
+// ---- Settings ----
+const getS = async (headers = golfer) => (await call('/api/settings', { headers })).json();
+const putS = async (body, headers = golfer) => call('/api/settings', { method: 'PUT', body, headers });
+assert.deepEqual(await getS(), { settings: null, modifiedAt: null }, 'nothing saved yet');
+const mine = { units: 'yd', window: 'recent', bag: ['d', '3w', '4h', '7i', '7i'] };
+assert.deepEqual(await (await putS({ settings: mine, modifiedAt: T(10) })).json(),
+  { applied: true, settings: { ...mine, bag: ['d', '3w', '4h', '7i'], removedClubs: null }, modifiedAt: T(10) }, 'saved; duplicate clubs dropped');
+assert.deepEqual((await (await putS({ settings: { ...mine, removedClubs: ['4i', '4i'] }, modifiedAt: T(11) })).json()).settings.removedClubs, ['4i']);
+assert.equal((await putS({ settings: { removedClubs: [7] }, modifiedAt: T(20) })).status, 400);
+res = await (await putS({ settings: { ...mine, units: 'm' }, modifiedAt: T(9) })).json();
+assert.equal(res.applied, false, 'an older change is ignored');
+assert.equal(res.settings.units, 'yd', '...and the newer one comes back');
+assert.equal((await getS(other)).settings, null, "someone else's settings are separate");
+assert.equal((await putS({ settings: { units: 'feet' }, modifiedAt: T(20) })).status, 400);
+assert.equal((await putS({ settings: { bag: 'driver' }, modifiedAt: T(20) })).status, 400);
+assert.equal((await putS({ settings: mine, modifiedAt: 'now' })).status, 400);
+assert.equal((await call('/api/settings', { method: 'DELETE', headers: golfer })).status, 405);
 
 console.log('Worker checks passed.');

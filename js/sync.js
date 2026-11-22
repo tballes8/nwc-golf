@@ -64,7 +64,10 @@ export async function syncNow(data, userId) {
     if (s.modifiedAt !== sent) continue; // changed again meanwhile: goes up next time
     if (res.applied) s.uploadedAt = sent;
     else if (res.session.deleted) data.sessions = data.sessions.filter(x => x !== s); // deleted elsewhere, later
-    else applyFields(s, res.session); // the server kept its own version: take it
+    else { // the server kept its own version: take it, shots included
+      applyFields(s, res.session);
+      if (res.session.shots) s.shots = res.session.shots;
+    }
   }
 
   for (let more = true; more;) {
@@ -74,15 +77,46 @@ export async function syncNow(data, userId) {
     more = page.more;
   }
   if (pulled) sortSessions(data);
+  if (await syncSettings(data)) pulled++;
   data.sync.lastSyncAt = new Date().toISOString();
   return { state: 'ok', pushed, pulled };
+}
+
+// Settings that follow the account (the bag, Rapsodo units, which sessions feed each club).
+// Landing zone and target yardage stay per device.
+const SHARED_SETTINGS = ['units', 'window', 'bag', 'removedClubs'];
+const sharedSettings = settings => Object.fromEntries(SHARED_SETTINGS.map(k => [k, settings[k] ?? null]));
+
+/** Upload settings changed here, or take newer ones from the server. Returns true if they changed here. */
+async function syncSettings(data) {
+  const sync = data.sync;
+  let srv;
+  if (sync.settingsModifiedAt && sync.settingsModifiedAt !== sync.settingsUploadedAt) {
+    const sent = sync.settingsModifiedAt;
+    srv = await api('PUT', '/api/settings', { settings: sharedSettings(data.settings), modifiedAt: sent });
+    if (srv.applied) {
+      sync.settingsUploadedAt = sent;
+      return false;
+    }
+  } else {
+    srv = await api('GET', '/api/settings');
+  }
+  // A device that never changed its settings takes the account's; otherwise the newer change wins.
+  if (!srv.modifiedAt || (sync.settingsModifiedAt && sync.settingsModifiedAt >= srv.modifiedAt)) return false;
+  for (const k of SHARED_SETTINGS) {
+    if (srv.settings[k] !== undefined) data.settings[k] = srv.settings[k];
+  }
+  sync.settingsModifiedAt = sync.settingsUploadedAt = srv.modifiedAt;
+  return true;
 }
 
 /** Forget this device's sessions and sync state (used when a different account signs in here). */
 export function clearDevice(data) {
   data.sessions = [];
   data.deleted = [];
-  data.sync = { userId: null, cursor: '', lastSyncAt: null };
+  data.settings.bag = null; // the bag was the other account's
+  data.settings.removedClubs = [];
+  data.sync = { userId: null, cursor: '', lastSyncAt: null, settingsModifiedAt: null, settingsUploadedAt: null };
 }
 
 // Fields a device can change after import. Source, file name, import time and shots never change.
