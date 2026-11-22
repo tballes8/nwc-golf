@@ -1,5 +1,5 @@
 import { parseSessionFile, clubInfo, sessionLabel } from './parse.js';
-import { buildProfiles, pickClub, DEFAULTS } from './stats.js';
+import { buildProfiles, pickClub, recentShots, DEFAULTS } from './stats.js';
 import { load, save, addSessions, backupBlob, readBackup, requestPersistence, touch, touchSettings, deleteSession, sortSessions } from './store.js';
 import { checkAccount, signOut, SIGN_IN_URL, storedAccount, rememberAccount, forgetAccount } from './account.js';
 import { syncNow, clearDevice } from './sync.js';
@@ -134,13 +134,14 @@ function renderCaddie() {
     ? `<p class="warn">None of your clubs carries close to ${target} yards. ${esc(p.name)} is the closest at ${fmt(p.median)}.</p>` : '';
 
   el.innerHTML = `
-    <p class="club">${esc(p.name)}</p>
+    <p class="club">${shotsButton(p.code, p.name)}</p>
     <p class="why"><strong>${pct(best.inside)}</strong> of your ${esc(p.name.toLowerCase())} shots land within ${zone} yards of ${target}. It usually carries ${fmt(p.p25)}–${fmt(p.p75)}.</p>
     <div class="split" aria-hidden="true">
       <span class="s" style="width:${best.short * 100}%"></span><span class="i" style="width:${best.inside * 100}%"></span><span class="l" style="width:${best.long * 100}%"></span>
     </div>
     <div class="split-key"><span>${pct(best.short)} short</span><span>${pct(best.long)} long</span></div>
-    ${backup ? `<p class="backup-club">Second choice: <strong>${esc(backup.profile.name)}</strong>, ${pct(backup.inside)} in the zone, ${pct(backup.short)} short, ${pct(backup.long)} long.</p>` : ''}
+    ${backup ? `<p class="backup-club">Second choice: <strong>${shotsButton(backup.profile.code, backup.profile.name)}</strong>, ${pct(backup.inside)} in the zone, ${pct(backup.short)} short, ${pct(backup.long)} long.</p>` : ''}
+    <p class="hint">Tap a club to see how you’ve struck its last 10 shots.</p>
     ${offTarget}${thin}`;
   bagChart($('#bag-chart-caddie'), target, p.code, flagDrag);
 }
@@ -202,6 +203,55 @@ caddieChart.addEventListener('pointerup', endFlagDrag);
 caddieChart.addEventListener('pointercancel', endFlagDrag);
 caddieChart.addEventListener('lostpointercapture', endFlagDrag);
 
+// ---------- Recent shots pop-up ----------
+// Tap a club name (Caddie answer, Bag) to see its last 10 shots and how they were struck,
+// e.g. to choose the 7 iron you're striking well over the 6 iron you're mishitting.
+
+/** A club name that opens the pop-up. */
+function shotsButton(code, name) {
+  return `<button type="button" class="club-name" data-shots="${esc(code)}" aria-haspopup="dialog">${esc(name)}</button>`;
+}
+
+const pad2 = n => String(n).padStart(2, '0');
+const todayISO = () => { const t = new Date(); return `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`; };
+const shortDate = d => d === todayISO() ? 'Today'
+  : new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const LABELS = { good: '', mishit: 'Mishit', partial: 'Partial' };
+
+function openShots(code) {
+  const r = recentShots(data.sessions.filter(s => s.date), code, { units: data.settings.units });
+  const usual = allProfiles.find(p => p.code === code)?.median;
+  const { good, mishit, partial } = r.counts;
+  $('#shots-title').textContent = clubInfo(code).name;
+  if (!r.shots.length) {
+    $('#shots-summary').textContent = 'No shots on record yet.';
+    $('#shots-table').innerHTML = '';
+  } else {
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const strikes = [`${good} good`, mishit && plural(mishit, 'mishit'), partial && `${partial} partial`].filter(Boolean).join(', ');
+    const carry = good
+      ? `Good shots carry ${fmt(r.goodMedian)}${Number.isFinite(usual) ? ` (usual ${fmt(usual)})` : ''}.`
+      : 'No good strikes among them.';
+    $('#shots-summary').textContent = `Last ${r.shots.length}: ${strikes}. ${carry}`;
+    const num = v => (v == null ? '–' : fmt(v));
+    $('#shots-table').innerHTML = `
+      <table class="shots">
+        <thead><tr><th scope="col">Date</th><th scope="col">Carry</th><th scope="col">Total</th><th scope="col">Ball / club mph</th><th scope="col"><span class="sr-only">Strike</span></th></tr></thead>
+        <tbody>
+          ${r.shots.map(s => `
+            <tr class="${s.label}">
+              <td>${esc(shortDate(s.date))}</td>
+              <td>${num(s.carry)}</td>
+              <td>${num(s.total)}</td>
+              <td>${num(s.ballSpeed)} / ${num(s.clubSpeed)}</td>
+              <td>${LABELS[s.label]}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+  $('#shots').showModal();
+}
+
 // ---------- Bag ----------
 // The clubs the golfer carries; the rules are in js/bag.js. Clubs taken out keep the shots
 // already on record but are left out of club picks, the chart and the gapping warnings, and
@@ -244,7 +294,7 @@ function clubCard(p) {
   const conf = p.confidence === 'solid' ? '' : p.confidence === 'thin' ? 'conf-thin' : 'conf-very';
   return `
       <article class="club">
-        <div class="club-head"><h2>${esc(p.name)}</h2><span class="big">${fmt(p.median)}<small>yd</small></span></div>
+        <div class="club-head"><h2>${shotsButton(p.code, p.name)}</h2><span class="big">${fmt(p.median)}<small>yd</small></span></div>
         <dl>
           <dt>Usual carry</dt><dd>${fmt(p.p25)}–${fmt(p.p75)} yd (middle half of shots)</dd>
           ${p.sideSd != null ? `<dt>Left/right</dt><dd>about ±${fmt(p.sideSd)} yd${Math.abs(p.sideMean) >= 3 ? `, leaning ${p.sideMean < 0 ? 'left' : 'right'} ${fmt(Math.abs(p.sideMean))} yd` : ''}</dd>` : ''}
@@ -265,7 +315,7 @@ function renderBag() {
   const total = profiles.reduce((s, p) => s + p.goodShots, 0);
   $('#bag-lede').textContent = !profiles.length && !noSwings.length
     ? 'No clubs yet. Import sessions to build your bag.'
-    : `${bag.length} club${bag.length === 1 ? '' : 's'} in your bag, from ${total} full swings. Carry only, in yards. Mishits and partial swings (chips, pitches) are left out.`;
+    : `${bag.length} club${bag.length === 1 ? '' : 's'} in your bag, from ${total} full swings. Carry only, in yards. Mishits and partial swings (chips, pitches) are left out. Tap a club for its last 10 shots.`;
   $('#club-list').innerHTML = [
     ...profiles.map(p => [p.order, clubCard(p)]),
     ...noSwings.map(c => [clubInfo(c).order, `
@@ -282,7 +332,7 @@ function renderBag() {
     <ul>
       ${out.map(p => `
         <li>
-          <span><strong>${esc(p.name)}</strong> <span class="hint">${fmt(p.median)} yd, ${p.goodShots} full swing${p.goodShots === 1 ? '' : 's'}</span></span>
+          <span><strong>${shotsButton(p.code, p.name)}</strong> <span class="hint">${fmt(p.median)} yd, ${p.goodShots} full swing${p.goodShots === 1 ? '' : 's'}</span></span>
           <button class="btn quiet" data-club="${esc(p.code)}">Add back</button>
         </li>`).join('')}
     </ul>`;
@@ -591,6 +641,8 @@ document.addEventListener('click', e => {
       t.dataset.confirm = '1'; t.textContent = 'Tap to delete';
       setTimeout(() => { if (t.isConnected) { t.dataset.confirm = ''; t.textContent = 'Delete'; } }, 4000);
     }
+  } else if (t.dataset.shots) {
+    openShots(t.dataset.shots);
   } else if (t.dataset.club) {
     toggleClub(t.dataset.club);
   } else if (t.id === 'bag-edit') {
@@ -623,6 +675,8 @@ document.addEventListener('click', e => {
   }
 });
 $('#new-club').addEventListener('cancel', e => e.preventDefault()); // Esc: an answer is needed
+// Tapping outside the shots pop-up closes it (the dialog itself is only the area outside its content).
+$('#shots').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 $('#target').addEventListener('change', e => setTarget(+e.target.value));
 $('#target').addEventListener('focus', e => e.target.select());
 $('#file').addEventListener('change', async e => { await importFiles([...e.target.files]); e.target.value = ''; });

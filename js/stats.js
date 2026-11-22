@@ -139,6 +139,41 @@ export function buildProfiles(sessions, { window = 'recent', units = 'yd', bag =
   return profiles;
 }
 
+/**
+ * A club's most recent shots, newest first (session date, then latest import, then shot
+ * order), each labelled 'good', 'mishit' or 'partial' by the same rules as the club's numbers,
+ * applied to all of the club's shots. For checking how a club is being struck lately.
+ * Sessions left out are skipped. Returns { shots, counts: { good, mishit, partial }, goodMedian }
+ * for the shots returned.
+ */
+export function recentShots(sessions, code, { units = 'yd', limit = 10, ...o } = {}) {
+  const opts = { ...DEFAULTS, ...o };
+  const all = [];
+  for (const s of sessions) {
+    if (s.excluded) continue;
+    const k = (s.units || units) === 'm' ? M_TO_YD : 1;
+    s.shots.forEach((shot, i) => {
+      if (shot.clubCode !== code) return;
+      all.push({ ...shot, carry: shot.carry * k, total: shot.total != null ? shot.total * k : null, date: s.date, n: i, importedAt: s.importedAt || '' });
+    });
+  }
+  const { partial, mishit } = classify(all, opts);
+  const partials = new Set(partial), mishits = new Set(mishit);
+  all.sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.importedAt.localeCompare(a.importedAt) || b.n - a.n);
+  const shots = all.slice(0, limit).map(s => ({
+    date: s.date,
+    carry: s.carry,
+    total: s.total,
+    ballSpeed: s.ballSpeed ?? null,
+    clubSpeed: s.clubSpeed ?? null,
+    label: partials.has(s) ? 'partial' : mishits.has(s) ? 'mishit' : 'good',
+  }));
+  const counts = { good: 0, mishit: 0, partial: 0 };
+  for (const s of shots) counts[s.label]++;
+  const goodCarries = shots.filter(s => s.label === 'good').map(s => s.carry).sort((a, b) => a - b);
+  return { shots, counts, goodMedian: quantile(goodCarries, 0.5) };
+}
+
 // Normal CDF (Abramowitz–Stegun 7.1.26 via erf).
 function phi(x) {
   const t = 1 / (1 + 0.3275911 * Math.abs(x) / Math.SQRT2);

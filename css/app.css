@@ -145,12 +145,38 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .club.no-swings .hint { margin-top: 4px; }
 
 /* "New club found" question */
-.dialog { border: 0; border-radius: var(--r-big); padding: 20px; width: min(420px, calc(100vw - 32px)); color: var(--ink); background: var(--paper); box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
+.dialog { border: 0; border-radius: var(--r-big); padding: 0; width: min(420px, calc(100vw - 32px)); color: var(--ink); background: var(--paper); box-shadow: 0 12px 40px rgba(0, 0, 0, .25); }
+.dialog > form { padding: 20px; } /* padding inside the form, so a tap outside it is a tap outside the pop-up */
 .dialog::backdrop { background: rgba(22, 32, 26, .55); }
 .dialog h2 { font: 700 30px/1.05 var(--display); margin: 0 0 10px; }
 .dialog p { margin: 0 0 10px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
 .dialog-actions .btn { min-width: 96px; }
+
+/* Club names that open the recent-shots pop-up */
+.club-name {
+  padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; text-align: inherit;
+  text-decoration: underline dotted; text-decoration-thickness: 2px; text-underline-offset: .18em;
+}
+
+/* Recent-shots pop-up */
+.shots-dialog { width: min(460px, calc(100vw - 24px)); }
+.shots-dialog > form { padding: 16px; }
+.dialog-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.dialog-head h2 { margin: 0; }
+.dialog-close {
+  min-width: 44px; min-height: 44px; border: 2px solid var(--rough); border-radius: var(--r-small);
+  background: var(--paper); color: var(--ink); font: 400 24px/1 var(--body); cursor: pointer;
+}
+#shots-summary { margin: 10px 0 12px; font-size: 16px; }
+.shots { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+.shots th { font-weight: 600; font-size: 13px; color: var(--ink-2); text-align: right; padding: 0 6px 6px; }
+.shots td { text-align: right; padding: 7px 6px; border-top: 1px solid var(--rough); white-space: nowrap; }
+.shots th:first-child, .shots td:first-child { text-align: left; padding-left: 0; }
+.shots td:last-child { padding-right: 0; font-weight: 600; font-size: 13px; }
+.shots tr.mishit td:last-child { color: var(--flag); }
+.shots tr.partial td:last-child { color: #8A5A00; }
+.shots tr.mishit td, .shots tr.partial td { color: var(--ink-2); }
 
 /* Bag editor */
 .bag-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

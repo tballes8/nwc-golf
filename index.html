@@ -129,6 +129,18 @@
     </form>
   </dialog>
 
+  <!-- A club's last 10 shots, opened by tapping a club name (see "Recent shots pop-up" in js/app.js) -->
+  <dialog id="shots" class="dialog shots-dialog" aria-labelledby="shots-title" aria-describedby="shots-summary">
+    <form method="dialog">
+      <div class="dialog-head">
+        <h2 id="shots-title"></h2>
+        <button class="dialog-close" value="close" aria-label="Close">×</button>
+      </div>
+      <p id="shots-summary"></p>
+      <div id="shots-table"></div>
+    </form>
+  </dialog>
+
   <nav class="tabs" aria-label="Sections">
     <button data-view="caddie" aria-current="page">Caddie</button>
     <button data-view="bag">Bag</button>

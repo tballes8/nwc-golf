@@ -80,6 +80,32 @@ assert.equal(myBag.find(p => p.code === '5h').gapWarning, undefined, 'no warning
 assert.equal(pickClub(everything, 155, 4).best.profile.code, '4i');
 assert.notEqual(pickClub(myBag, 155, 4).best.profile.code, '4i', 'a club not in the bag is never picked');
 
+// Recent shots for a club: newest first, labelled by the same rules as the club's numbers.
+{
+  const { recentShots } = await import('../js/stats.js');
+  const shot = (carry, extra = {}) => ({ clubCode: '6i', carry, clubSpeed: 75, ballSpeed: 100, smash: 1.33, ...extra });
+  const older = { id: 'o', date: '2026-11-10', importedAt: '2026-11-10T10:00:00.000Z', shots: [140, 142, 141, 139, 143, 140].map(c => shot(c)) };
+  const today = {
+    id: 't', date: '2026-11-22', importedAt: '2026-11-22T10:00:00.000Z',
+    shots: [shot(141), shot(60, { smash: 0.8 }), shot(40, { clubSpeed: 50 }), { clubCode: '7i', carry: 130 }, shot(138)],
+  };
+  const skippedSession = { id: 'x', date: '2026-11-23', excluded: true, shots: [shot(999)] };
+  const r = recentShots([older, today, skippedSession], '6i', { limit: 6 });
+  assert.deepEqual(r.shots.map(s => [s.date, Math.round(s.carry), s.label]), [
+    ['2026-11-22', 138, 'good'],
+    ['2026-11-22', 40, 'partial'], // club speed far below this club's usual
+    ['2026-11-22', 60, 'mishit'],  // smash under 1.0
+    ['2026-11-22', 141, 'good'],
+    ['2026-11-10', 140, 'good'],
+    ['2026-11-10', 143, 'good'],
+  ], 'newest first: latest date, then the last shot of the session; left-out sessions skipped');
+  assert.deepEqual(r.counts, { good: 4, mishit: 1, partial: 1 });
+  assert.equal(r.goodMedian, 140.5);
+  const metric = recentShots([{ ...older, shots: [shot(100)] }], '6i', { units: 'm' });
+  assert.equal(Math.round(metric.shots[0].carry), 109, 'Rapsodo meters are converted');
+  assert.deepEqual(recentShots([older], 'lw').shots, []);
+}
+
 // Importing with a bag: new clubs are asked about, removed clubs' shots are left out.
 {
   const { normalize } = await import('../js/store.js');
