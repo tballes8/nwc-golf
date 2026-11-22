@@ -22,6 +22,13 @@
     <span class="top-status" id="status" role="status" aria-live="polite"></span>
   </header>
 
+  <!-- Sign-in gate: shown until this device has signed in once (see "Sign-in" in js/app.js) -->
+  <section id="gate" class="gate" hidden aria-labelledby="t-gate">
+    <h1 id="t-gate">Welcome</h1>
+    <p class="lede">NWC Golf picks your club from your own launch monitor data. It’s being tested by invited golfers.</p>
+    <div id="gate-body"></div>
+  </section>
+
   <main>
     <!-- Caddie -->
     <section id="view-caddie" class="view" aria-labelledby="t-caddie">

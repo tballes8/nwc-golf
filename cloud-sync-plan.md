@@ -122,12 +122,15 @@ Every query filters on the signed-in `user_id`.
 ## Sync in the app
 
 - Each session gets `modifiedAt`, set whenever it's imported or edited. Deleting keeps a small marker (`{ id, at }`) so the delete can be uploaded.
+- A fresh import (never synced or edited on that device) never overwrites a session the server already has, even though its import time is newer. Importing the same file on a second device mustn't undo edits made on the first. The server answers with its own version and the device takes it. (Added in phase 2.)
+- If a different account signs in on a device, its sessions aren't synced; the Sessions screen offers to remove them from the device (warning if any changes never reached the old account).
 - Sync runs when the app opens, after an import or edit, and when the phone comes back online. A **Sync now** button is there too.
 - Steps: upload local changes made since the last sync, then download server changes since the last sync and merge them (newer `modifiedAt` wins).
 - First sign-in on a device that already has sessions uploads them. Sessions already on the server (same ID) aren't uploaded twice.
 - `userId: 'local'` on existing sessions becomes the signed-in user's ID.
-- Settings: "Distances in Rapsodo files" and "Shots used for each club" sync with the account. Target yardage and landing zone stay per device.
-- Sessions screen: "Signed in as tyrone@…, last synced 2 min ago", **Sync now**, **Sign out**. Signed out: **Sign in to sync**. The app works exactly as today without signing in.
+- Settings: "Distances in Rapsodo files" and "Shots used for each club" sync with the account. Target yardage and landing zone stay per device. **Not built yet** (needs a small table change); deferred from phase 2.
+- Sessions screen: "Signed in as …, last synced 2 min ago", **Sync now**, **Sign out**.
+- Sign-in gate (added Nov 22): a device must sign in once before the app opens. The last signed-in account is remembered on the device (`nwcgolf.account` in localStorage), so after that the app opens straight away, offline too. An expired sign-in shows a notice on Sessions instead of locking the app mid-round. **Sign out** brings the gate back. The gate is a front door, not a lock (the app's files are public); the data on the server is what Access and the Worker protect. The whole site is deliberately not behind Access: that would block the Home Screen install files and could replace the cached app with a login page offline.
 - Download backup stays.
 - Courses sync like sessions and are stored on the phone too, so course history works offline on the course.
 
@@ -166,7 +169,7 @@ Not part of this plan's phases, but the tables are shaped for it: a live round i
 ## Phases
 
 1. **Plumbing**: Worker, tables, `/api/me`, `/api/login`, sign-in and sign-out on the Sessions screen, `sw.js` fix. Then test sign-in on the PC and **in the iPhone Home Screen app**. Home Screen apps keep their own cookies, separate from Safari, and a login page on another domain can behave differently there. This is the main unknown, so it's tested before building sync on top.
-2. **Sync**: sessions and courses API, `js/sync.js`, first-sign-in upload, merge, Sessions screen status.
+2. **Sync**: sessions API (`worker/sessions.js`), `js/sync.js`, first-sign-in upload, merge, Sessions screen status. Built Nov 22. The courses API moves to 2b, where it's first used; settings sync is deferred.
 2b. **Courses in the app**: course and kind on imported sessions, course picker on Sessions and Caddie, course history view. The local part (no sign-in needed) can be built before phase 1 if you want it on the course sooner.
 3. **Testers**: add their emails to the Access policy and send them the link. Each tester only sees their own data.
 

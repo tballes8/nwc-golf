@@ -2,6 +2,19 @@
 
 export const SIGN_IN_URL = '/api/login';
 
+// The last account that signed in on this device. Kept apart from sessions and backups.
+// It lets the app open straight away (offline too) on a device that has signed in before.
+const KEY = 'nwcgolf.account';
+export function storedAccount() {
+  try { return JSON.parse(localStorage.getItem(KEY)) || null; } catch { return null; }
+}
+export function rememberAccount({ email, userId }) {
+  try { localStorage.setItem(KEY, JSON.stringify({ email, userId })); } catch { /* storage blocked */ }
+}
+export function forgetAccount() {
+  try { localStorage.removeItem(KEY); } catch { /* storage blocked */ }
+}
+
 /**
  * Ask the API who is signed in.
  * Returns one of:

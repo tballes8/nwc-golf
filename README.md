@@ -15,6 +15,8 @@ Live at: https://golf.nwc-analytics.com
 - Caddie screen: enter yards to carry and get the club with the best chance of landing inside the landing zone (±8 yd by default), plus a second choice.
 - Flags clubs with thin data and clubs that carry no farther than the next club down.
 - Stores everything on the phone (localStorage). Use **Download backup** now and then.
+- Invited testers only: each device signs in once (email code via Cloudflare Access) before the app opens. After that it opens offline too; Sign out is on the Sessions screen.
+- Syncs sessions between your devices through the account (Cloudflare D1): at start, a couple of seconds after an import or edit, when back online or back in the foreground, and with **Sync now**. The phone stays the working copy, so everything works offline; the newer change wins.
 
 ## Deploy (Cloudflare Workers static assets + GitHub)
 
@@ -62,8 +64,9 @@ The first runs built-in checks (CSV parsing, filename dates, E6 import, units). 
 
 ```
 node tests/worker.mjs
+node tests/sync.mjs
 ```
-Checks the API Worker: the Cloudflare Access token check (bad signature, wrong audience or issuer, expired) and the routes, with a fake signing key and database.
+Need Node 22.13+ (built-in SQLite). `worker.mjs` checks the API Worker: the Cloudflare Access token check (bad signature, wrong audience or issuer, expired) and every route, against a real SQLite database built from `migrations/`. `sync.mjs` runs several simulated devices through the Worker and checks sync end to end: uploads, downloads, edits, deletes, the newer change winning, re-imports, backups and a second account. `tests/helpers.mjs` holds the D1 stand-in and fake Access.
 
 ## Files
 
@@ -74,7 +77,10 @@ js/parse.js           CSV parsing, Rapsodo column mapping, club names
 js/stats.js           mishit filter, club profiles, club picks
 js/store.js           local storage and backups
 js/account.js         sign-in status (Cloudflare Access)
-worker/index.js       API Worker (/api/*)
+js/sync.js            sync with the account (upload, download, merge)
+worker/index.js       API Worker (/api/*): routes and the Access token check
+worker/sessions.js    sessions API
+worker/http.js        shared response helpers
 migrations/           D1 database schema changes
 js/app.js             screens and events
 sw.js                 offline cache

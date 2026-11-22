@@ -29,5 +29,5 @@ Samples: `shot_data_export_2026-11-20T00_49_06.772054Z.csv` (Oslo Golf Club, 18 
   - Proposed extra rule for all formats: mishit if carry per mph of ball speed < 0.9 (good shots run 1.0–1.6 yd/mph; the topped 4h shots are 0.15–0.71), or apex under 10 ft on a full swing.
   - Also compute the 75%-of-median check on shots that pass the yd/mph rule, so mishits don't drag the median down.
 
-## Double counting
-If these E6 rounds were played on the MLM2PRO, check whether R-Cloud also saved them. If it did, importing both files counts the same shots twice. The current fingerprint won't catch it because the formats differ. Options: warn when an E6 session and a Rapsodo session share a date and similar shot count, or match shots on rounded carry + ball speed.
+## Double counting (resolved Nov 22: not an issue)
+All shots come from the MLM2PRO, but E6 Connect stores the rounds played through it only on the E6 platform, and R-Cloud stores only sessions played in Rapsodo's own app. The same shots never appear in both exports, so no cross-format duplicate check is needed.

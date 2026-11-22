@@ -1,7 +1,8 @@
 import { parseSessionFile, clubInfo, sessionLabel } from './parse.js';
 import { buildProfiles, pickClub, DEFAULTS } from './stats.js';
-import { load, save, addSessions, backupBlob, readBackup, requestPersistence } from './store.js';
-import { checkAccount, signOut, SIGN_IN_URL } from './account.js';
+import { load, save, addSessions, backupBlob, readBackup, requestPersistence, touch, deleteSession, sortSessions } from './store.js';
+import { checkAccount, signOut, SIGN_IN_URL, storedAccount, rememberAccount, forgetAccount } from './account.js';
+import { syncNow, clearDevice } from './sync.js';
 
 const $ = sel => document.querySelector(sel);
 const data = load();
@@ -214,25 +215,132 @@ function renderSessions() {
   }).join('');
 }
 
-// ---------- Account (sign-in for sync) ----------
-async function renderAccount() {
+// ---------- Sign-in ----------
+// A device must sign in once before the app opens (the gate). After that it opens straight
+// away, offline too. An expired sign-in only shows a notice on Sessions, so nobody gets locked
+// out mid-round. The gate is a front door, not a lock: the app's files are public, and the
+// data on the server is what Cloudflare Access and the Worker protect.
+
+function setGated(on) {
+  document.body.classList.toggle('gated', on);
+  $('#gate').hidden = !on;
+}
+
+function renderGate(state) {
+  const el = $('#gate-body');
+  if (state === 'checking') {
+    el.innerHTML = '<p class="hint">Checking your sign-in…</p>';
+  } else if (state === 'offline') {
+    el.innerHTML = `
+      <p>You’re offline. Connect to the internet to sign in the first time. After that, the app works offline.</p>
+      <button class="btn" data-recheck>Try again</button>`;
+  } else if (state === 'error') {
+    el.innerHTML = `
+      <p>Couldn’t reach the server. Try again in a minute.</p>
+      <button class="btn" data-recheck>Try again</button>`;
+  } else {
+    el.innerHTML = `
+      <p>Sign in with the email address you were invited with. You’ll get a code by email.</p>
+      <a class="btn primary" href="${SIGN_IN_URL}">Sign in</a>`;
+  }
+}
+
+let account = { state: 'checking' }; // the last checkAccount() result
+let syncState = { state: 'idle' };  // idle | syncing | ok | error (with message) | other-account
+
+const ago = iso => {
+  const min = Math.round((Date.now() - new Date(iso)) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min} min ago`;
+  if (min < 48 * 60) return `${Math.round(min / 60)} h ago`;
+  return niceDate(iso.slice(0, 10));
+};
+
+function renderAccountBox() {
   const el = $('#account');
-  const a = await checkAccount();
-  if (a.state === 'unavailable') { el.hidden = true; return; } // no API here, e.g. python http.server
   el.hidden = false;
-  if (a.state === 'signed-in') {
+  if (account.state === 'signed-in' && syncState.state === 'other-account') {
+    const unsynced = data.sessions.filter(s => s.uploadedAt !== s.modifiedAt).length + data.deleted.length;
     el.innerHTML = `
-      <p>Signed in as <strong>${esc(a.email)}</strong>. Syncing sessions between your devices is coming next.</p>
-      <button class="btn quiet" id="sign-out">Sign out</button>`;
-  } else if (a.state === 'signed-out') {
+      <p>Signed in as <strong>${esc(account.email)}</strong>. The sessions on this device belong to another account, so they aren’t synced.
+      To sync yours here, remove them from this device${unsynced ? `. <strong>${unsynced} change${unsynced === 1 ? '' : 's'} on this device never reached that account and will be lost.</strong>` : '; they’re safe on the other account'}.</p>
+      <div class="acct-actions">
+        <button class="btn danger" id="clear-device">Remove from this device</button>
+        <button class="btn quiet" id="sign-out">Sign out</button>
+      </div>`;
+  } else if (account.state === 'signed-in') {
+    const line = syncState.state === 'syncing' ? 'Syncing…'
+      : syncState.state === 'error' ? esc(syncState.message)
+      : data.sync.lastSyncAt ? `Synced ${ago(data.sync.lastSyncAt)}.` : 'Not synced yet.';
     el.innerHTML = `
-      <p>Testers: sign in to keep your sessions on all your devices.</p>
+      <p>Signed in as <strong>${esc(account.email)}</strong>.<br><span class="hint">${line}</span></p>
+      <div class="acct-actions">
+        <button class="btn quiet" id="sync-now"${syncState.state === 'syncing' ? ' disabled' : ''}>Sync now</button>
+        <button class="btn quiet" id="sign-out">Sign out</button>
+      </div>`;
+  } else if (account.state === 'signed-out') {
+    el.innerHTML = `
+      <p>Your sign-in has expired. Sign in again to keep your devices in sync.</p>
       <a class="btn" href="${SIGN_IN_URL}">Sign in</a>`;
-  } else if (a.state === 'offline') {
-    el.innerHTML = '<p class="hint">You’re offline. Your sign-in shows here when you’re back online.</p>';
+  } else if (account.state === 'offline') {
+    el.innerHTML = `<p class="hint">Signed in as ${esc(storedAccount()?.email || '')}. You’re offline; changes sync when you’re back online.</p>`;
   } else {
     el.innerHTML = '<p class="hint">Couldn’t check your sign-in. Try again later.</p>';
   }
+}
+
+async function checkSignIn() {
+  const a = await checkAccount();
+  account = a;
+  if (a.state === 'signed-in') rememberAccount(a);
+  if (a.state === 'unavailable') { // no API here, e.g. python http.server: no gate, no account box
+    setGated(false);
+    $('#account').hidden = true;
+    return;
+  }
+  const known = storedAccount();
+  setGated(!known);
+  if (known) renderAccountBox();
+  else renderGate(a.state);
+  if (a.state === 'signed-in') runSync();
+}
+
+// ---------- Sync ----------
+// One sync at a time; a change during a sync queues another one. See js/sync.js.
+let syncRunning = false, syncAgain = false, syncTimer = null;
+
+/** Sync shortly after a change, so several quick changes go up together. */
+function scheduleSync(delay = 2000) {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(runSync, delay);
+}
+
+async function runSync() {
+  if (account.state !== 'signed-in') return;
+  if (syncRunning) { syncAgain = true; return; }
+  syncRunning = true;
+  syncState = { state: 'syncing' };
+  renderAccountBox();
+  try {
+    const r = await syncNow(data, account.userId);
+    syncState = { state: r.state };
+    if (r.pulled) refresh();
+  } catch (err) {
+    if (err.state === 'signed-out') {
+      account = { state: 'signed-out' };
+      syncState = { state: 'idle' };
+    } else {
+      syncState = {
+        state: 'error',
+        message: err.state === 'offline' ? 'You’re offline; changes sync when you’re back online.' : `Sync didn’t finish: ${err.message}`,
+      };
+    }
+  } finally {
+    persist(); // keep whatever finished, even after an error
+    syncRunning = false;
+  }
+  renderAccountBox();
+  if (syncAgain) { syncAgain = false; runSync(); }
 }
 
 async function importFiles(fileList) {
@@ -253,6 +361,7 @@ async function importFiles(fileList) {
   const { added, duplicates } = addSessions(data, sessions);
   persist();
   refresh();
+  if (added) scheduleSync(500);
   const parts = [];
   if (added) parts.push(`Imported ${added} session${added === 1 ? '' : 's'}`);
   if (duplicates) parts.push(`${duplicates} already imported`);
@@ -302,21 +411,38 @@ document.addEventListener('click', e => {
     const s = data.sessions.find(x => x.id === t.dataset.toggle);
     if (s) {
       s.excluded = !s.excluded;
-      persist(); refresh();
+      touch(s);
+      persist(); refresh(); scheduleSync();
       status(s.excluded ? `Left out the ${niceDate(s.date)} session.` : `Using the ${niceDate(s.date)} session again.`);
     }
   } else if (t.dataset.del) {
     const s = data.sessions.find(x => x.id === t.dataset.del);
     if (s && t.dataset.confirm === '1') {
-      data.sessions = data.sessions.filter(x => x.id !== s.id);
-      persist(); refresh(); status(`Deleted the ${niceDate(s.date)} session.`);
+      deleteSession(data, s.id);
+      persist(); refresh(); scheduleSync();
+      status(`Deleted the ${niceDate(s.date)} session.`);
     } else if (s) {
       t.dataset.confirm = '1'; t.textContent = 'Tap to delete';
       setTimeout(() => { if (t.isConnected) { t.dataset.confirm = ''; t.textContent = 'Delete'; } }, 4000);
     }
+  } else if ('recheck' in t.dataset) {
+    renderGate('checking');
+    checkSignIn();
+  } else if (t.id === 'sync-now') {
+    runSync();
+  } else if (t.id === 'clear-device') {
+    if (t.dataset.confirm === '1') {
+      clearDevice(data);
+      persist(); refresh(); runSync();
+      status('Removed the other account’s sessions from this device.');
+    } else {
+      t.dataset.confirm = '1'; t.textContent = 'Tap to remove';
+      setTimeout(() => { if (t.isConnected) { t.dataset.confirm = ''; t.textContent = 'Remove from this device'; } }, 4000);
+    }
   } else if (t.id === 'sign-out') {
     t.disabled = true;
-    signOut().then(renderAccount).then(() => status('Signed out.'));
+    syncState = { state: 'idle' };
+    signOut().then(() => { forgetAccount(); return checkSignIn(); }).then(() => status('Signed out.'));
   } else if (t.id === 'backup') {
     download(backupBlob(data), `nwc-golf-backup-${new Date().toISOString().slice(0, 10)}.json`);
     status('Backup downloaded.');
@@ -331,15 +457,29 @@ $('#session-list').addEventListener('change', e => {
   const id = e.target.dataset.date;
   if (!id || !e.target.value) return;
   const s = data.sessions.find(x => x.id === id);
-  if (s) { s.date = e.target.value; delete s.dateGuessed; data.sessions.sort((a, b) => (b.date || '').localeCompare(a.date || '')); persist(); refresh(); }
+  if (s) {
+    s.date = e.target.value;
+    delete s.dateGuessed;
+    touch(s);
+    sortSessions(data);
+    persist(); refresh(); scheduleSync();
+  }
 });
 
 // ---------- Start ----------
 $('#target').value = data.settings.target;
 refresh();
 requestPersistence();
-renderAccount();
-window.addEventListener('online', renderAccount);
+// Decide from what's stored right away, so a signed-in device never flashes the gate.
+if (!storedAccount()) { setGated(true); renderGate('checking'); }
+checkSignIn();
+window.addEventListener('online', checkSignIn);
+// Phones keep the app open in the background for days: sync when it comes back to the front.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || account.state !== 'signed-in') return;
+  const last = data.sync.lastSyncAt ? Date.now() - new Date(data.sync.lastSyncAt) : Infinity;
+  if (last > 5 * 60 * 1000) runSync();
+});
 if (new URLSearchParams(location.search).has('signed-in')) {
   // Back from the Access sign-in page (see /api/login in worker/index.js).
   history.replaceState(null, '', location.pathname);

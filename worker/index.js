@@ -7,35 +7,44 @@
 // misconfigured Access rule can't expose anyone's data. Without a valid token, every
 // request gets 401.
 
+import { json, HttpError } from './http.js';
+import { putSession, deleteSession, listSessions, SESSION_ID } from './sessions.js';
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    const { pathname } = url, method = request.method;
     try {
       const email = await signedInEmail(request, env, url);
       if (!email) return json({ error: 'Not signed in.' }, 401);
       const user = await findOrCreateUser(env.DB, email);
 
-      if (url.pathname === '/api/login' && request.method === 'GET') {
+      if (pathname === '/api/login' && method === 'GET') {
         // Reached after the Access sign-in page; send the golfer back to the app.
         return Response.redirect(new URL('/?signed-in', url).toString(), 302);
       }
-      if (url.pathname === '/api/me' && request.method === 'GET') {
+      if (pathname === '/api/me' && method === 'GET') {
         return json({ email: user.email, userId: user.id });
+      }
+      if (pathname === '/api/sessions' && method === 'GET') {
+        return await listSessions(env.DB, user.id, url.searchParams.get('since'));
+      }
+      const m = pathname.match(/^\/api\/sessions\/([^/]+)$/);
+      if (m) {
+        const id = m[1]; // IDs are plain letters, digits, - and _, so no decoding needed
+        if (!SESSION_ID.test(id)) return json({ error: 'Not a session ID.' }, 400);
+        if (method === 'PUT') return await putSession(env.DB, user.id, id, request);
+        if (method === 'DELETE') return await deleteSession(env.DB, user.id, id, request);
+        return json({ error: 'Use PUT or DELETE.' }, 405);
       }
       return json({ error: 'Not found.' }, 404);
     } catch (err) {
+      if (err instanceof HttpError) return json({ error: err.message }, err.status);
       console.error(err);
       return json({ error: 'Server error.' }, 500);
     }
   },
 };
-
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' },
-  });
-}
 
 /** The signed-in email (lowercased), or null. */
 async function signedInEmail(request, env, url) {

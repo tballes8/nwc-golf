@@ -100,6 +100,17 @@ export function infoFromFilename(name = '') {
   return { date, type: type ? type.toLowerCase() : null };
 }
 
+/**
+ * Where a session was played: 'range', 'sim' (a simulator round) or 'course' (a live round,
+ * entered in the app later). Rapsodo "studios-courses" files are sim rounds; E6 files are sim
+ * rounds unless the course is one of E6's practice areas ("Practice Area Targets").
+ */
+export function sessionKind(s) {
+  if (s.kind) return s.kind;
+  if (s.source === 'e6-connect') return /practice|range/i.test(s.label || '') ? 'range' : 'sim';
+  return (s.type || '').includes('course') ? 'sim' : 'range';
+}
+
 /** Plain-language name for a Rapsodo session type. */
 export function sessionLabel(type) {
   if (!type) return '';
@@ -146,6 +157,8 @@ export function parseSessionFile(text, fileName = '') {
   };
   if (units) session.units = units;     // set when the file states its units; otherwise the setting applies
   if (exported) session.dateGuessed = true; // date is the export day; the app lets the golfer correct it
+  session.kind = sessionKind(session);
+  session.modifiedAt = session.importedAt; // for sync: the newer change wins
   return { ok: true, session };
 }
 
