@@ -114,8 +114,8 @@ Shots never change after import, so each shot row is written once. A 150-shot se
 | `GET /api/sessions?since=<synced_at>` | Sessions changed since the last pull, with their shots (and delete markers) |
 | `PUT /api/sessions/<id>` | Upload a new session with its shots, or update its date, excluded flag or label |
 | `DELETE /api/sessions/<id>` | Mark deleted |
-| `GET /api/courses?since=<updated_at>` | Courses added or changed since the last pull |
-| `PUT /api/courses/<id>` | Add a course or fix its name/location |
+| `GET /api/courses` | Every course (a short list, so no cursor) |
+| `PUT /api/courses/<id>` | Add a course; one that's already there is left as it is and sent back |
 
 Every query filters on the signed-in `user_id`.
 
@@ -134,11 +134,15 @@ Every query filters on the signed-in `user_id`.
 - Download backup stays.
 - Courses sync like sessions and are stored on the phone too, so course history works offline on the course.
 
-## Course history (live rounds)
+## Course history (built Nov 22, phase 2b)
 
-- A course picker on the Caddie screen: "Playing at: Oslo Golf Club". The app remembers it for the day.
-- With a course picked, a Course view shows your history there: number of rounds played, average score (18-hole and 9-hole rounds averaged separately), and a round picker to look at one round. Simulator rounds count, labelled as sim.
-- Sessions screen: each session shows its course and kind, and you can set or change the course and enter the score and holes played. Score is entered by hand: E6 exports don't include putts, so they can't give a score.
+- A course picker at the top of Caddie ("Playing a course?"). The app remembers it for the day, on that device only (`settings.playing`, not synced).
+- With a course picked, one line shows rounds played there and the average score; tapping it opens the course pop-up: rounds played (sim rounds count, labelled sim), average score with 18-hole and 9-hole rounds averaged separately, and a round picker showing one round hole by hole (clubs and carries, from E6's hole numbers; Rapsodo sim files have none).
+- Sessions screen: each sim round shows its kind, a course picker, the score and holes played (9 or 18; guessed from E6's hole numbers until set). Score is entered by hand: E6 exports don't include putts, so they can't give a score. Range sessions show none of this.
+- Course IDs come from the name and location (`oslo-golf-club`, `pine-ridge--coeur-d-alene-id`; `courseIdFor` in `js/courses.js`), so the same course added offline on two devices, or by two testers, is one row. The first spelling stays; there's no renaming yet.
+- E6 rounds get their course from the course column at import, matched by name to a course already on the device. Sessions imported before this were given theirs once (`migrateCourses`), and marked as changed so they upload.
+- Sync uploads new courses before sessions (a session's course must exist on the server), then downloads the whole course list. The session upload stores an unknown course as none rather than failing.
+- No database change was needed: `courses` and `sessions.course_id` were in `0001_init.sql`.
 
 ## Later: entering shots in the app
 
@@ -170,7 +174,7 @@ Not part of this plan's phases, but the tables are shaped for it: a live round i
 
 1. **Plumbing**: Worker, tables, `/api/me`, `/api/login`, sign-in and sign-out on the Sessions screen, `sw.js` fix. Then test sign-in on the PC and **in the iPhone Home Screen app**. Home Screen apps keep their own cookies, separate from Safari, and a login page on another domain can behave differently there. This is the main unknown, so it's tested before building sync on top.
 2. **Sync**: sessions API (`worker/sessions.js`), `js/sync.js`, first-sign-in upload, merge, Sessions screen status. Built Nov 22. The courses API moves to 2b, where it's first used; settings sync is deferred.
-2b. **Courses in the app**: course and kind on imported sessions, course picker on Sessions and Caddie, course history view. The local part (no sign-in needed) can be built before phase 1 if you want it on the course sooner.
+2b. **Courses in the app**: course and kind on imported sessions, course picker on Sessions and Caddie, course history view. Built Nov 22 (see "Course history").
 3. **Testers**: add their emails to the Access policy and send them the link. Each tester only sees their own data.
 
 ## Moving to real accounts later

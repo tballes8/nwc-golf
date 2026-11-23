@@ -6,10 +6,14 @@ const KEY = 'nwcgolf.v1';
 const EMPTY = () => ({
   version: 1,
   sessions: [],
+  // Courses this device knows: shared ones from the server, and ones added here
+  // (pending: true until uploaded). See js/courses.js.
+  courses: [],
   // bag: club codes the golfer carries; null = every club with shots (until the bag is edited).
   // removedClubs: clubs taken out of the bag or declined at import; their shots aren't imported.
-  // units, window, bag and removedClubs sync with the account; zone and target stay on this device.
-  settings: { units: 'yd', window: 'recent', zone: 8, target: 150, bag: null, removedClubs: [] },
+  // playing: the course picked on Caddie, { id, day }; it counts for that day only.
+  // units, window, bag and removedClubs sync with the account; zone, target and playing stay on this device.
+  settings: { units: 'yd', window: 'recent', zone: 8, target: 150, bag: null, removedClubs: [], playing: null },
   deleted: [],  // sessions deleted here but not yet deleted on the server: [{ id, at }]
   sync: {
     userId: null,            // the account this device's sessions belong to
@@ -25,6 +29,7 @@ export function normalize(data) {
   const base = EMPTY();
   const out = { ...base, ...data, settings: { ...base.settings, ...(data.settings || {}) }, sync: { ...base.sync, ...(data.sync || {}) } };
   out.deleted = Array.isArray(data.deleted) ? data.deleted : [];
+  out.courses = Array.isArray(data.courses) ? data.courses : [];
   // A bag edited before removedClubs existed: the clubs taken out are the ones with shots
   // that aren't in it (otherwise the next import would ask about them as new clubs).
   if (data.settings?.bag && !Array.isArray(data.settings.removedClubs)) {
@@ -100,9 +105,9 @@ export function addSessions(data, sessions) {
   return { added, duplicates };
 }
 
-/** Backup file: sessions and settings. This device's sync state stays out of it. */
+/** Backup file: sessions, courses and settings. This device's sync state stays out of it. */
 export function backupBlob(data) {
-  const { sync, deleted, ...rest } = data;
+  const { sync, deleted, coursesReady, ...rest } = data;
   return new Blob([JSON.stringify({ app: 'nwc-golf', exportedAt: new Date().toISOString(), ...rest }, null, 1)], { type: 'application/json' });
 }
 

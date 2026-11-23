@@ -34,6 +34,9 @@
     <section id="view-caddie" class="view" aria-labelledby="t-caddie">
       <h1 id="t-caddie" class="sr-only">Caddie</h1>
 
+      <!-- The course being played today (see "Course" in js/app.js) -->
+      <div id="playing" class="playing"></div>
+
       <div class="yardage" role="group" aria-label="Carry distance to target">
         <button class="step" data-step="-5" aria-label="Minus 5 yards">−5</button>
         <button class="step" data-step="-1" aria-label="Minus 1 yard">−1</button>
@@ -138,6 +141,32 @@
       </div>
       <p id="shots-summary"></p>
       <div id="shots-table"></div>
+    </form>
+  </dialog>
+
+  <!-- The course being played and your history there, opened from the top of Caddie -->
+  <dialog id="course" class="dialog course-dialog" aria-labelledby="course-title">
+    <form method="dialog">
+      <div class="dialog-head">
+        <h2 id="course-title">Course</h2>
+        <button class="dialog-close" value="close" aria-label="Close">×</button>
+      </div>
+      <label class="field"><span>Playing at</span><select id="playing-select"></select></label>
+      <div id="course-history"></div>
+    </form>
+  </dialog>
+
+  <!-- "Add a course…" in any course picker -->
+  <dialog id="new-course" class="dialog" aria-labelledby="new-course-title">
+    <form method="dialog">
+      <h2 id="new-course-title">Add a course</h2>
+      <label class="field stack"><span>Name</span><input id="new-course-name" maxlength="100" autocomplete="off" required></label>
+      <label class="field stack"><span>Town or region (optional)</span><input id="new-course-location" maxlength="100" autocomplete="off"></label>
+      <p class="hint">Course names are shared with the other testers so they can pick them too. Your rounds and scores aren’t.</p>
+      <div class="dialog-actions">
+        <button type="button" class="btn" data-dialog-cancel>Cancel</button>
+        <button class="btn primary" value="add">Add</button>
+      </div>
     </form>
   </dialog>
 

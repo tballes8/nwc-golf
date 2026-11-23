@@ -181,6 +181,41 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .shots tr.partial td:last-child { color: #8A5A00; }
 .shots tr.mishit td, .shots tr.partial td { color: var(--ink-2); }
 
+/* Caddie: the course being played today */
+.playing { margin: 0 0 14px; }
+.playing:empty { display: none; }
+.playing-btn {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px; width: 100%; min-height: 44px;
+  padding: 8px 12px; border: 2px solid var(--rough); border-radius: var(--r-small); background: var(--paper); cursor: pointer; text-align: left;
+}
+.pc-name { font: 700 20px/1.1 var(--display); color: var(--fairway); }
+.pc-sum { font-size: 15px; color: var(--ink-2); white-space: nowrap; }
+.playing-pick {
+  min-height: 40px; padding: 0; border: 0; background: none; color: var(--ink-2); font-size: 15px; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: .18em;
+}
+
+/* Course pop-up */
+.course-dialog { width: min(460px, calc(100vw - 24px)); }
+.course-dialog > form { padding: 16px; }
+.course-dialog .field { margin-top: 6px; }
+.course-dialog .field select { flex: 1; min-width: 0; max-width: 260px; }
+.course-sum { margin: 10px 0 0; font-size: 16px; }
+.holes { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 15px; font-variant-numeric: tabular-nums; }
+.holes th { font-weight: 600; font-size: 13px; color: var(--ink-2); text-align: left; padding: 0 6px 6px 0; }
+.holes td { padding: 6px 6px 6px 0; border-top: 1px solid var(--rough); vertical-align: top; }
+.holes td:first-child { width: 40px; font-weight: 600; }
+.holes .carry { color: var(--ink-2); }
+.field.stack { flex-direction: column; align-items: stretch; gap: 4px; }
+.field.stack span { font-size: 15px; color: var(--ink-2); }
+
+/* Sessions: a round's course, score and holes */
+.round-fields { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.round-fields select, .round-fields input { min-height: 40px; border: 2px solid var(--rough); border-radius: var(--r-small); padding: 0 8px; background: var(--paper); max-width: 100%; }
+.score-row { display: flex; gap: 8px; align-items: center; }
+.score { display: flex; align-items: center; gap: 6px; font-size: 15px; color: var(--ink-2); }
+.score input { width: 64px; color: var(--ink); }
+
 /* Bag editor */
 .bag-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .bag-editor { padding: 4px 0 16px; border-bottom: 1px solid var(--rough); }
@@ -220,6 +255,7 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .field select, .field input { min-height: 44px; border: 2px solid var(--rough); border-radius: var(--r-small); padding: 0 10px; background: var(--paper); }
 .session-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rough); }
 .session-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--rough); }
+.session-list li > div:first-child { flex: 1; min-width: 0; }
 .session-list .d { font: 600 20px/1.1 var(--display); }
 .session-list .meta { font-size: 15px; color: var(--ink-2); }
 .session-list li.off .d { color: var(--ink-2); text-decoration: line-through; }

@@ -205,4 +205,44 @@ assert.equal((await putS({ settings: { bag: 'driver' }, modifiedAt: T(20) })).st
 assert.equal((await putS({ settings: mine, modifiedAt: 'now' })).status, 400);
 assert.equal((await call('/api/settings', { method: 'DELETE', headers: golfer })).status, 405);
 
+// ---- Courses ----
+const putC = (id, body, headers = golfer) => call(`/api/courses/${id}`, { method: 'PUT', body, headers });
+const listC = async (headers = golfer) => (await (await call('/api/courses', { headers })).json()).courses;
+assert.deepEqual(await listC(), []);
+assert.deepEqual(await (await putC('oslo-golf-club', { name: '  Oslo   Golf Club ', location: null })).json(),
+  { course: { id: 'oslo-golf-club', name: 'Oslo Golf Club', location: null } }, 'added, spaces tidied');
+// Adding it again (another device, or another golfer) changes nothing: the first spelling stays.
+assert.deepEqual((await (await putC('oslo-golf-club', { name: 'OSLO GOLF CLUB' }, other)).json()).course.name, 'Oslo Golf Club');
+await putC('avondale--hayden-id', { name: 'Avondale', location: 'Hayden, ID' }, other);
+assert.deepEqual(await listC(), [
+  { id: 'avondale--hayden-id', name: 'Avondale', location: 'Hayden, ID' },
+  { id: 'oslo-golf-club', name: 'Oslo Golf Club', location: null },
+], 'shared: everyone sees every course, without who added it');
+assert.equal(env.DB.sqlite.prepare("SELECT created_by FROM courses WHERE id = 'avondale--hayden-id'").get().created_by,
+  env.DB.sqlite.prepare("SELECT id FROM users WHERE email = 'other@example.com'").get().id);
+assert.equal((await putC('x', { name: '' })).status, 400);
+assert.equal((await putC('x', { name: 'y'.repeat(101) })).status, 400);
+assert.equal((await putC('x', { name: 'Ok', location: 5 })).status, 400);
+assert.equal((await putC('x', ['Oslo'])).status, 400);
+assert.equal((await putC('has%20space', { name: 'Ok' })).status, 400, 'odd IDs refused');
+assert.equal((await call('/api/courses/x', { method: 'DELETE', headers: golfer })).status, 405);
+assert.equal((await call('/api/courses')).status, 401, 'signed-in golfers only');
+
+// A session's course: set, changed and cleared by newer uploads; an unknown course becomes none.
+const T2 = n => new Date(Date.UTC(2026, 10, 23, 12, 0, n)).toISOString();
+const courseOf = id => env.DB.sqlite.prepare('SELECT course_id FROM sessions WHERE id = ? AND user_id = (SELECT id FROM users WHERE email = ?)').get(id, 'golfer@example.com').course_id;
+await put('round1', session({ courseId: 'oslo-golf-club', score: 94, holes: 18, importedAt: T2(1), modifiedAt: T2(1) }));
+assert.equal(courseOf('round1'), 'oslo-golf-club');
+const listAll = async () => { const out = []; let c = ''; for (let more = true; more;) { const p = await list(c); out.push(...p.sessions); c = p.cursor; more = p.more; } return out; };
+let back = (await listAll()).find(x => x.id === 'round1');
+assert.equal(back.courseId, 'oslo-golf-club');
+assert.equal(back.score, 94);
+await put('round1', session({ courseId: 'avondale--hayden-id', importedAt: T2(1), modifiedAt: T2(2) }));
+assert.equal(courseOf('round1'), 'avondale--hayden-id');
+await put('round1', session({ courseId: null, importedAt: T2(1), modifiedAt: T2(3) }));
+assert.equal(courseOf('round1'), null);
+assert.equal((await put('round2', session({ courseId: 'nowhere', importedAt: T2(1), modifiedAt: T2(1) }))).status, 200);
+assert.equal(courseOf('round2'), null, 'unknown course: stored without one');
+assert.equal((await put('round3', session({ courseId: 'bad id!' }))).status, 400);
+
 console.log('Worker checks passed.');

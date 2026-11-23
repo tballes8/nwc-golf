@@ -180,6 +180,88 @@ assert.notEqual(pickClub(myBag, 155, 4).best.profile.code, '4i', 'a club not in 
   assert.deepEqual(newClubs(older, [file('h', ['4i'])]).clubs, []);
 }
 
+// Courses (js/courses.js)
+{
+  const { courseIdFor, addCourse, courseNamed, autoCourse, guessHoles, courseHistory, roundByHole, migrateCourses, playingCourse, restoreCourses } = await import('../js/courses.js');
+  const { normalize, touch } = await import('../js/store.js');
+  assert.equal(courseIdFor('Oslo Golf Club'), 'oslo-golf-club');
+  assert.equal(courseIdFor('  Oslo   golf club '), 'oslo-golf-club', 'same course however it is typed');
+  assert.equal(courseIdFor('Pine Ridge', 'Coeur d’Alene, ID'), 'pine-ridge--coeur-d-alene-id');
+  assert.equal(courseIdFor('Château Élan'), 'chateau-elan');
+  assert.match(courseIdFor('東京ゴルフ倶楽部'), /^c[0-9a-f]+$/, 'no Latin letters still gives an ID');
+  assert.ok(courseIdFor('x'.repeat(200)).length <= 60);
+
+  const d = normalize({});
+  const oslo = addCourse(d, 'Oslo Golf Club');
+  assert.equal(oslo.pending, true, 'uploaded at the next sync');
+  assert.equal(addCourse(d, 'oslo golf club'), oslo, 'added twice is one course');
+  assert.equal(courseNamed(d, 'OSLO GOLF CLUB'), oslo);
+  addCourse(d, 'Avondale', 'Hayden, ID');
+  assert.deepEqual(d.courses.map(c => c.name), ['Avondale', 'Oslo Golf Club'], 'sorted by name');
+
+  // E6 rounds get their course from the file; practice areas and Rapsodo files don't.
+  const e6 = (label, extra = {}) => ({ source: 'e6-connect', label, shots: [], ...extra });
+  const round = e6('Oslo Golf Club');
+  assert.equal(autoCourse(d, round), true);
+  assert.equal(round.courseId, 'oslo-golf-club');
+  const practice = e6('Practice Area Targets');
+  assert.equal(autoCourse(d, practice), false);
+  assert.equal(practice.courseId, undefined);
+  assert.equal(autoCourse(d, { source: 'rapsodo-mlm2pro', type: 'studios-courses', shots: [] }), false);
+  const elsewhere = e6('Pebble Creek');
+  autoCourse(d, elsewhere);
+  assert.equal(d.courses.length, 3, 'a new course from a file is added');
+
+  // Holes played, from the hole numbers in the file.
+  const holes = n => Array.from({ length: n }, (_, i) => ({ hole: i + 1, clubCode: 'd', carry: 200 }));
+  assert.equal(guessHoles({ shots: holes(18) }), 18);
+  assert.equal(guessHoles({ shots: holes(16) }), 18, 'a few holes with no shots recorded');
+  assert.equal(guessHoles({ shots: holes(9) }), 9);
+  assert.equal(guessHoles({ shots: [{ clubCode: 'd', carry: 200 }] }), null);
+
+  // History: rounds (sim rounds count), averages for 18 and 9 holes separately.
+  const at = (date, score, n, extra = {}) => ({ id: date, courseId: 'oslo-golf-club', kind: 'sim', source: 'e6-connect', date, score, shots: holes(n), ...extra });
+  const sessions = [
+    at('2026-11-19', 94, 18), at('2026-11-01', 90, 18), at('2026-10-20', 45, 9),
+    at('2026-10-10', undefined, 18),
+    at('2026-10-05', 100, 18, { holes: 9 }), // the golfer said 9 holes: it counts as 9
+    at('2026-11-20', 80, 18, { kind: 'range' }), // not a round
+    at('2026-11-21', 70, 18, { courseId: 'avondale--hayden-id' }),
+  ];
+  const h = courseHistory(sessions, 'oslo-golf-club');
+  assert.deepEqual(h.rounds.map(s => s.date), ['2026-11-19', '2026-11-01', '2026-10-20', '2026-10-10', '2026-10-05'], 'newest first');
+  assert.deepEqual(h.avg18, { rounds: 2, score: 92 });
+  assert.deepEqual(h.avg9, { rounds: 2, score: 72.5 });
+  assert.equal(h.unscored, 1);
+  assert.equal(h.sims, 5);
+  assert.deepEqual(courseHistory(sessions, 'nowhere'), { rounds: [], sims: 0, avg18: null, avg9: null, unscored: 0 });
+
+  assert.deepEqual(roundByHole({ shots: [
+    { hole: 2, clubCode: '7i', carry: 140 }, { hole: 1, clubCode: 'd', carry: 210 }, { hole: 1, clubCode: 'aw', carry: 90 }, { clubCode: 'pw', carry: 100 },
+  ] }), [{ hole: 1, shots: [{ clubCode: 'd', carry: 210 }, { clubCode: 'aw', carry: 90 }] }, { hole: 2, shots: [{ clubCode: '7i', carry: 140 }] }]);
+
+  // One-time update of sessions imported before courses: changed ones are marked for upload.
+  const old = normalize({ sessions: [
+    { id: 'a', source: 'e6-connect', kind: 'sim', label: 'Oslo Golf Club', importedAt: '2026-11-20T00:00:00.000Z', shots: [] },
+    { id: 'b', source: 'rapsodo-mlm2pro', type: 'range', importedAt: '2026-11-20T00:00:00.000Z', shots: [] },
+  ] });
+  assert.equal(migrateCourses(old, touch), 1);
+  assert.equal(old.sessions[0].courseId, 'oslo-golf-club');
+  assert.notEqual(old.sessions[0].modifiedAt, old.sessions[0].importedAt, 'marked as changed');
+  assert.equal(old.sessions[1].modifiedAt, '2026-11-20T00:00:00.000Z', 'range session untouched');
+  assert.equal(migrateCourses(old, touch), 0, 'runs once');
+
+  // The course picked on Caddie counts for that day only.
+  old.settings.playing = { id: 'oslo-golf-club', day: '2026-11-22' };
+  assert.equal(playingCourse(old, '2026-11-22')?.name, 'Oslo Golf Club');
+  assert.equal(playingCourse(old, '2026-11-23'), null);
+
+  // Courses from a backup are added (and uploaded) if they're not here.
+  const fresh = normalize({});
+  restoreCourses(fresh, [{ id: 'oslo-golf-club', name: 'Oslo Golf Club', location: null }, { bad: 1 }]);
+  assert.deepEqual(fresh.courses, [{ id: 'oslo-golf-club', name: 'Oslo Golf Club', location: null, pending: true }]);
+}
+
 const files = process.argv.slice(2);
 if (!files.length) { console.log('Unit checks passed. Pass CSV files to test real data.'); process.exit(0); }
 

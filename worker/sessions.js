@@ -45,7 +45,7 @@ export async function putSession(db, userId, id, request) {
   const now = new Date().toISOString();
   await db.batch([
     db.prepare(UPSERT_SESSION).bind(
-      userId, id, s.source, s.kind, s.fileName, s.date, s.type, s.label, s.units, s.score, s.holes,
+      userId, id, s.source, s.kind, s.courseId, s.fileName, s.date, s.type, s.label, s.units, s.score, s.holes,
       s.dateGuessed, s.excluded, s.importedAt, s.modifiedAt, now, s.fresh,
     ),
     db.prepare(INSERT_SHOTS).bind(userId, id, JSON.stringify(s.shots)),
@@ -113,14 +113,15 @@ const SESSION_COLUMNS = `id, source, kind, course_id, file_name, date, type, lab
   date_guessed, excluded, imported_at, modified_at, synced_at, deleted`;
 
 // Insert, or update when this upload is newer (and not a fresh import over a live session; the
-// last parameter is 1 for a fresh import). Source, file name and import time never change;
-// course_id is left alone until courses arrive (phase 2b). A newer upload also undoes a delete.
+// last parameter is 1 for a fresh import). Source, file name and import time never change.
+// A course the server doesn't know becomes no course rather than an error (the app uploads
+// courses first, so this is only a safety net). A newer upload also undoes a delete.
 const UPSERT_SESSION = `
-  INSERT INTO sessions (user_id, id, source, kind, file_name, date, type, label, units, score, holes,
+  INSERT INTO sessions (user_id, id, source, kind, course_id, file_name, date, type, label, units, score, holes,
                         date_guessed, excluded, imported_at, modified_at, synced_at, deleted)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+  VALUES (?, ?, ?, ?, (SELECT id FROM courses WHERE id = ?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
   ON CONFLICT (user_id, id) DO UPDATE SET
-    kind = excluded.kind, date = excluded.date, type = excluded.type, label = excluded.label,
+    kind = excluded.kind, course_id = excluded.course_id, date = excluded.date, type = excluded.type, label = excluded.label,
     units = excluded.units, score = excluded.score, holes = excluded.holes,
     date_guessed = excluded.date_guessed, excluded = excluded.excluded,
     modified_at = excluded.modified_at, synced_at = excluded.synced_at, deleted = 0
@@ -167,10 +168,12 @@ export function cleanSession(b) {
   if (!ISO_TIME.test(b.importedAt ?? '')) bad('importedAt must be an ISO time.');
   if (!ISO_TIME.test(b.modifiedAt ?? '')) bad('modifiedAt must be an ISO time.');
   if (b.units != null && b.units !== 'yd' && b.units !== 'm') bad('units must be yd or m.');
+  if (b.courseId != null && !(typeof b.courseId === 'string' && SESSION_ID.test(b.courseId))) bad('courseId is not a course ID.');
   if (!Array.isArray(b.shots) || !b.shots.length || b.shots.length > MAX_SHOTS) bad(`shots must be a list of 1 to ${MAX_SHOTS} shots.`);
   return {
     source: b.source,
     kind: b.kind,
+    courseId: b.courseId ?? null,
     fileName: text(b.fileName, 200, 'fileName'),
     date: b.date ?? null,
     type: text(b.type, 60, 'type'),

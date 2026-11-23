@@ -17,6 +17,8 @@ Live at: https://golf.nwc-analytics.com
 - Recent strikes: tap a club name (Caddie or Bag) for its last 10 shots, each marked good, mishit or partial by the same rules as the club numbers. On Caddie, one line appears when the pick has 3+ mishits in its recent full swings and the second choice is striking at least 25 points better (`STRIKE_RULES` in `js/stats.js`), e.g. "You've mishit 4 of your last 10 full swings with your 3 wood. Your 4 hybrid: 9 of 10 good."
 - Your bag: **Edit bag** on the Bag screen picks the clubs you carry. Clubs taken out (say, a 4 iron a simulator app chose for you) keep the shots already on record but are left out of club picks, the chart and the gapping warnings; **Add back** returns them. Until you edit it (or until your first import), the bag is every club you've hit. Warns above 14 clubs.
 - Importing with a bag (`js/bag.js`): shots with clubs you took out aren't imported. A club that's in a file but in neither your bag nor the taken-out list brings up **New club found**: Yes adds it to the bag with its shots; No leaves its shots out and puts it on the taken-out list, so you aren't asked again. Your first import sets the bag without asking. Backups restore as they are. Shots left out at import are never stored, so adding the club back later doesn't bring them in from files already imported.
+- Courses: E6 rounds get their course from the file; for Rapsodo sim rounds (the file doesn't name the course) pick it on the Sessions screen, where each round also takes its score and holes played (E6 exports have no putts, so the score is typed in). **Add a course…** in any course picker adds one. Course names are shared with the other testers so the same course isn't added twice; rounds and scores aren't. A course's ID comes from its name and town (`js/courses.js`).
+- Course history: at the top of Caddie, pick the course you're playing (it stays picked for the day). The line then shows rounds played there and your average score; tap it for 18- and 9-hole averages and any round hole by hole (clubs and carries). Sim rounds count.
 - Stores everything on the phone (localStorage). Use **Download backup** now and then.
 - Invited testers only: each device signs in once (email code via Cloudflare Access) before the app opens. After that it opens offline too; Sign out is on the Sessions screen.
 - Syncs sessions, your bag, and the two Sessions-screen settings between your devices through the account (Cloudflare D1); landing zone and target yardage stay per device. Syncs at start, a couple of seconds after an import or edit, when back online or back in the foreground, and with **Sync now**. The phone stays the working copy, so everything works offline; the newer change wins.
@@ -82,9 +84,11 @@ js/store.js           local storage and backups
 js/account.js         sign-in status (Cloudflare Access)
 js/sync.js            sync with the account (upload, download, merge)
 js/bag.js             the bag: clubs carried, clubs taken out, new clubs at import
+js/courses.js         courses, course history, a round hole by hole
 worker/index.js       API Worker (/api/*): routes and the Access token check
 worker/sessions.js    sessions API
 worker/settings.js    settings API (bag, units, window)
+worker/courses.js     courses API (shared course list)
 worker/http.js        shared response helpers
 migrations/           D1 database schema changes
 js/app.js             screens and events
@@ -111,4 +115,5 @@ tests/run.mjs         tests
 - Plays-like distance: forecast wind, temperature, elevation.
 - Course GPS: distance to pin and hazards.
 - Tournament mode toggle.
-- Accounts and cloud sync (Cloudflare Workers + D1).
+- Testers (phase 3 in `cloud-sync-plan.md`).
+- Entering shots in the app during a live round.

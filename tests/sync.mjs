@@ -195,4 +195,46 @@ assert.equal(old.sessions[0].modifiedAt, '2026-10-01T10:00:00.000Z');
 assert.deepEqual(old.sync, { userId: null, cursor: '', lastSyncAt: null, settingsModifiedAt: null, settingsUploadedAt: null });
 assert.equal(old.settings.bag, null);
 
+// 12. Courses: an E6 round brings its course; the course list and the round's course, score and
+// holes reach the other devices. The same course added on two devices offline is one course.
+{
+  const { autoCourse, addCourse, courseHistory } = await import('../js/courses.js');
+  const ROUND = 'shot_data_export_2026-11-22T02_00_00.000000Z.csv';
+  const roundCsv = [E6.split('\n')[0], 'Avondale Golf Club,1,1,Driver,81,201,181,41,121,2400,300,-1.5,12', 'Avondale Golf Club,2,2,7 Iron,70,150,140,70,100,6000,0,1,18'].join('\n');
+  const home = device(), away = device();
+  await syncNow(home, golferId); await syncNow(away, golferId); // both up to date first
+  const s = parseSessionFile(roundCsv, ROUND).session;
+  autoCourse(home, s); // as importFiles does
+  addSessions(home, [s]);
+  assert.equal(s.courseId, 'avondale-golf-club');
+  await syncNow(home, golferId);
+  assert.equal(home.courses.find(c => c.id === s.courseId).pending, undefined, 'course uploaded');
+  await syncNow(away, golferId);
+  assert.ok(away.courses.some(c => c.id === 'avondale-golf-club'), 'course list came down');
+  assert.equal(find(away, s.id).courseId, 'avondale-golf-club');
+
+  await tick();
+  const r2 = find(away, s.id);
+  r2.score = 88; r2.holes = 18; touch(r2);
+  await syncNow(away, golferId);
+  await syncNow(home, golferId);
+  assert.deepEqual(courseHistory(home.sessions, 'avondale-golf-club').avg18, { rounds: 1, score: 88 });
+
+  // Offline, both devices add the same course (typed differently); it's one course afterwards.
+  addCourse(home, 'Highlands Golf Club', 'Post Falls, ID');
+  addCourse(away, 'highlands golf club ', 'post falls, id');
+  await syncNow(home, golferId); await syncNow(away, golferId); await syncNow(home, golferId);
+  const highlands = d => d.courses.filter(c => c.id === 'highlands-golf-club--post-falls-id');
+  assert.equal(highlands(home).length, 1);
+  assert.deepEqual(highlands(away), highlands(home), 'the first spelling, everywhere');
+  assert.equal(env.DB.sqlite.prepare("SELECT count(*) AS n FROM courses WHERE id LIKE 'highlands%'").get().n, 1);
+  // Courses are shared: another golfer sees the list, but not the rounds.
+  signedInAs = 'friend@example.com';
+  const friendDevice = device();
+  await syncNow(friendDevice, friendId);
+  assert.ok(friendDevice.courses.some(c => c.id === 'avondale-golf-club'));
+  assert.equal(friendDevice.sessions.length, 0);
+  signedInAs = 'golfer@example.com';
+}
+
 console.log('Sync checks passed.');

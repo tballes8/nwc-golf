@@ -10,6 +10,7 @@
 import { json, HttpError } from './http.js';
 import { putSession, deleteSession, listSessions, SESSION_ID } from './sessions.js';
 import { getSettings, putSettings } from './settings.js';
+import { listCourses, putCourse, COURSE_ID } from './courses.js';
 
 export default {
   async fetch(request, env) {
@@ -31,6 +32,15 @@ export default {
         if (method === 'GET') return await getSettings(env.DB, user.id);
         if (method === 'PUT') return await putSettings(env.DB, user.id, request);
         return json({ error: 'Use GET or PUT.' }, 405);
+      }
+      if (pathname === '/api/courses' && method === 'GET') {
+        return await listCourses(env.DB);
+      }
+      const c = pathname.match(/^\/api\/courses\/([^/]+)$/);
+      if (c) {
+        if (!COURSE_ID.test(c[1])) return json({ error: 'Not a course ID.' }, 400);
+        if (method === 'PUT') return await putCourse(env.DB, user.id, c[1], request);
+        return json({ error: 'Use PUT.' }, 405);
       }
       if (pathname === '/api/sessions' && method === 'GET') {
         return await listSessions(env.DB, user.id, url.searchParams.get('since'));

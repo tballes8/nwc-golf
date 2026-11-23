@@ -1,8 +1,9 @@
 // Cloud sync: keeps this device's sessions in step with the account's sessions on the server
 // (worker/sessions.js). The device stays the working copy, so the app works offline; a sync:
 //   1. uploads deletes made here,
-//   2. uploads sessions imported or changed here since their last upload,
-//   3. downloads everything that changed on the server since the last sync and merges it.
+//   2. uploads courses added here, and downloads the shared course list,
+//   3. uploads sessions imported or changed here since their last upload,
+//   4. downloads everything that changed on the server since the last sync and merges it.
 // For each session the newer modifiedAt wins. See "Sync in the app" in cloud-sync-plan.md.
 import { sessionKind } from './parse.js';
 import { sortSessions } from './store.js';
@@ -55,6 +56,9 @@ export async function syncNow(data, userId) {
     pushed++;
   }
 
+  // Before sessions: a session's course must be on the server first.
+  if (await syncCourses(data)) pulled++;
+
   for (const s of [...data.sessions]) {
     if (s.uploadedAt === s.modifiedAt) continue;
     const sent = s.modifiedAt;
@@ -80,6 +84,25 @@ export async function syncNow(data, userId) {
   if (await syncSettings(data)) pulled++;
   data.sync.lastSyncAt = new Date().toISOString();
   return { state: 'ok', pushed, pulled };
+}
+
+/**
+ * Upload courses added here, then take the server's list (courses are shared between accounts).
+ * Courses here that the server doesn't have are kept and go up next time. Returns true if the
+ * list here changed.
+ */
+async function syncCourses(data) {
+  for (const c of data.courses.filter(c => c.pending)) {
+    await api('PUT', `/api/courses/${c.id}`, { name: c.name, location: c.location || null });
+    delete c.pending;
+  }
+  const { courses } = await api('GET', '/api/courses');
+  const before = JSON.stringify(data.courses);
+  const onServer = new Set(courses.map(c => c.id));
+  const missing = data.courses.filter(c => !onServer.has(c.id)).map(c => ({ ...c, pending: true }));
+  data.courses = [...courses.map(c => ({ id: c.id, name: c.name, location: c.location || null })), ...missing]
+    .sort((a, b) => a.name.localeCompare(b.name) || (a.location || '').localeCompare(b.location || ''));
+  return JSON.stringify(data.courses) !== before;
 }
 
 // Settings that follow the account (the bag, Rapsodo units, which sessions feed each club).
@@ -126,6 +149,7 @@ function toServer(s) {
   return {
     source: s.source,
     kind: sessionKind(s),
+    courseId: s.courseId || null,
     fileName: s.fileName || null,
     date: s.date || null,
     type: s.type || null,

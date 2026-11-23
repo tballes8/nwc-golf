@@ -1,9 +1,10 @@
-import { parseSessionFile, clubInfo, sessionLabel } from './parse.js';
+import { parseSessionFile, clubInfo, sessionLabel, sessionKind } from './parse.js';
 import { buildProfiles, pickClub, recentShots, strikeComparison, DEFAULTS } from './stats.js';
 import { load, save, addSessions, backupBlob, readBackup, requestPersistence, touch, touchSettings, deleteSession, sortSessions } from './store.js';
 import { checkAccount, signOut, SIGN_IN_URL, storedAccount, rememberAccount, forgetAccount } from './account.js';
 import { syncNow, clearDevice } from './sync.js';
 import { byOrder, shotCounts, currentBag, setClub, newClubs, keepBagShots } from './bag.js';
+import { addCourse, autoCourse, findCourse, isRound, roundHoles, courseHistory, roundByHole, migrateCourses, playingCourse, restoreCourses } from './courses.js';
 
 const $ = sel => document.querySelector(sel);
 const data = load();
@@ -272,6 +273,130 @@ function openShots(code) {
   $('#shots').showModal();
 }
 
+// ---------- Course ----------
+// The course being played today, picked on Caddie, and your history there: rounds played (sim
+// rounds count), average score, and one round hole by hole. See js/courses.js.
+
+const courseLabel = c => (c.location ? `${c.name}, ${c.location}` : c.name);
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+const avgScore = n => String(Math.round(n * 10) / 10);
+
+/** <option>s for a course picker: your courses first, then the ones other golfers added. */
+function courseOptions(selected, noneLabel) {
+  const mine = new Set(data.sessions.filter(isRound).map(s => s.courseId).filter(Boolean));
+  const opt = c => `<option value="${esc(c.id)}"${c.id === selected ? ' selected' : ''}>${esc(courseLabel(c))}</option>`;
+  const yours = data.courses.filter(c => mine.has(c.id)), others = data.courses.filter(c => !mine.has(c.id));
+  const list = yours.length && others.length
+    ? `<optgroup label="Your courses">${yours.map(opt).join('')}</optgroup><optgroup label="Other courses">${others.map(opt).join('')}</optgroup>`
+    : data.courses.map(opt).join('');
+  const lost = selected && !findCourse(data, selected) ? `<option value="${esc(selected)}" selected>Course not found</option>` : '';
+  return `<option value="">${esc(noneLabel)}</option>${lost}${list}<option value="+add">Add a course…</option>`;
+}
+
+/** "3 rounds · avg 92.5": the one line on Caddie. */
+function historyLine(h) {
+  if (!h.rounds.length) return 'No rounds here yet';
+  const avg = h.avg18 ? `avg ${avgScore(h.avg18.score)}` : h.avg9 ? `avg ${avgScore(h.avg9.score)} for 9` : '';
+  return [plural(h.rounds.length, 'round'), avg].filter(Boolean).join(' · ');
+}
+
+function renderPlaying() {
+  const c = playingCourse(data, todayISO());
+  $('#playing').innerHTML = c
+    ? `<button type="button" class="playing-btn" data-course-open aria-haspopup="dialog">
+        <span class="pc-name">${esc(c.name)}</span><span class="pc-sum">${esc(historyLine(courseHistory(data.sessions, c.id)))}</span>
+      </button>`
+    : '<button type="button" class="playing-pick" data-course-open aria-haspopup="dialog">Playing a course? Pick it to see your history there.</button>';
+}
+
+let courseRound = null; // the round shown in the course pop-up (null = the latest)
+
+function renderCourseDialog() {
+  const c = playingCourse(data, todayISO());
+  $('#course-title').textContent = c ? c.name : 'Course';
+  $('#playing-select').innerHTML = courseOptions(c?.id, 'Not on a course');
+  const el = $('#course-history');
+  if (!c) {
+    el.innerHTML = '<p class="hint">Pick the course you’re playing to see your rounds and scores there. It stays picked for today.</p>';
+    return;
+  }
+  const h = courseHistory(data.sessions, c.id);
+  if (!h.rounds.length) {
+    el.innerHTML = '<p class="hint">No rounds here yet. Import the round afterwards (or pick this course for it on Sessions) and it shows up here.</p>';
+    return;
+  }
+  const sims = !h.sims ? '' : h.sims === h.rounds.length ? (h.sims === 1 ? ' (sim)' : ' (all sim)') : ` (${h.sims} sim)`;
+  const avgs = [
+    h.avg18 && `<strong>${avgScore(h.avg18.score)}</strong> for 18 holes${h.avg18.rounds < h.rounds.length ? ` (${plural(h.avg18.rounds, 'round')})` : ''}`,
+    h.avg9 && `<strong>${avgScore(h.avg9.score)}</strong> for 9 holes (${plural(h.avg9.rounds, 'round')})`,
+  ].filter(Boolean);
+  const round = h.rounds.find(s => s.id === courseRound) || h.rounds[0];
+  el.innerHTML = `
+    <p class="course-sum"><strong>${h.rounds.length}</strong> ${h.rounds.length === 1 ? 'round' : 'rounds'} played${sims}.
+      ${avgs.length ? `Average score: ${avgs.join(', ')}.` : 'No scores yet.'}</p>
+    ${h.unscored ? `<p class="hint">${plural(h.unscored, 'round')} without a score; add ${h.unscored === 1 ? 'it' : 'them'} on Sessions.</p>` : ''}
+    <label class="field"><span>Round</span>
+      <select id="round-select">${h.rounds.map(s => `<option value="${esc(s.id)}"${s === round ? ' selected' : ''}>${esc(roundName(s))}</option>`).join('')}</select>
+    </label>
+    ${roundDetail(round)}`;
+}
+
+/** "Nov 19, 2026 · 94 · sim" */
+function roundName(s) {
+  return [niceDate(s.date), s.score && `${s.score}${roundHoles(s) === 9 ? ' (9)' : ''}`, sessionKind(s) === 'sim' && 'sim'].filter(Boolean).join(' · ');
+}
+
+/** One round hole by hole: the clubs hit and how far they carried. */
+function roundDetail(s) {
+  const holes = roundByHole(s);
+  if (!holes.length) return '<p class="hint">This file has no hole numbers, so there’s no hole-by-hole view.</p>';
+  const club = x => `${esc(shortName({ name: clubInfo(x.clubCode).name }))} <span class="carry">${fmt(x.carry)}</span>`;
+  return `
+    <table class="holes">
+      <thead><tr><th scope="col">Hole</th><th scope="col">Clubs and carry (yd)</th></tr></thead>
+      <tbody>${holes.map(h => `<tr><td>${h.hole}</td><td>${h.shots.map(club).join(' · ')}</td></tr>`).join('')}</tbody>
+    </table>`;
+}
+
+function openCourse() {
+  courseRound = null;
+  renderCourseDialog();
+  $('#course').showModal();
+}
+
+async function pickPlaying(select) {
+  let id = select.value;
+  if (id === '+add') {
+    const c = await askNewCourse();
+    if (!c) { select.value = playingCourse(data, todayISO())?.id || ''; return; }
+    id = c.id;
+  }
+  data.settings.playing = id ? { id, day: todayISO() } : null;
+  courseRound = null;
+  persist();
+  renderCourseDialog();
+  renderPlaying();
+}
+
+/** "Add a course" pop-up. Resolves with the course (new, or the one already here), or null. */
+function askNewCourse() {
+  const dlg = $('#new-course');
+  $('#new-course-name').value = '';
+  $('#new-course-location').value = '';
+  return new Promise(resolve => {
+    dlg.addEventListener('close', () => {
+      const name = $('#new-course-name').value.trim();
+      if (dlg.returnValue !== 'add' || !name) { resolve(null); return; }
+      const c = addCourse(data, name, $('#new-course-location').value);
+      persist(); scheduleSync();
+      status(`Added ${c.name}.`);
+      resolve(c);
+    }, { once: true });
+    dlg.returnValue = '';
+    dlg.showModal();
+  });
+}
+
 // ---------- Bag ----------
 // The clubs the golfer carries; the rules are in js/bag.js. Clubs taken out keep the shots
 // already on record but are left out of club picks, the chart and the gapping warnings, and
@@ -369,6 +494,7 @@ function renderSessions() {
   if (!data.sessions.length) { ul.innerHTML = ''; return; }
   ul.innerHTML = data.sessions.map(s => {
     const clubs = [...new Set(s.shots.map(x => x.clubCode))].sort((a, b) => clubInfo(a).order - clubInfo(b).order).map(c => shortName({ name: clubInfo(c).name })).join(', ');
+    const round = isRound(s);
     return `
       <li class="${s.excluded ? 'off' : ''}">
         <div>
@@ -376,8 +502,9 @@ function renderSessions() {
             ? `<div class="d">${niceDate(s.date)}</div>`
             : `<label class="field"><span>${s.date ? 'Date played' : 'Session date'}</span><input type="date" data-date="${s.id}" value="${esc(s.date || '')}"></label>`}
           ${s.dateGuessed ? '<div class="meta">This is the day the file was exported. Change it if you played on a different day.</div>' : ''}
-          <div class="meta">${s.shots.length} shots${s.label ? `, ${esc(s.label)}` : s.type ? `, ${esc(sessionLabel(s.type))}` : ''}. ${esc(clubs)}</div>
+          <div class="meta">${s.shots.length} shots${round ? `, ${sessionKind(s) === 'sim' ? 'sim round' : 'round'}` : s.label ? `, ${esc(s.label)}` : s.type ? `, ${esc(sessionLabel(s.type))}` : ''}. ${esc(clubs)}</div>
           ${s.excluded ? '<div class="meta">Left out of your club distances</div>' : ''}
+          ${round ? roundFields(s) : ''}
         </div>
         <div class="s-actions">
           <button class="btn quiet" data-toggle="${s.id}">${s.excluded ? 'Use again' : 'Leave out'}</button>
@@ -385,6 +512,22 @@ function renderSessions() {
         </div>
       </li>`;
   }).join('');
+}
+
+/** A round's course, score and holes played (score is entered by hand: E6 exports have no putts). */
+function roundFields(s) {
+  const holes = roundHoles(s) ?? 18;
+  const holeOpts = [...new Set([18, 9, holes])].map(n => `<option value="${n}"${n === holes ? ' selected' : ''}>${n} holes</option>`).join('');
+  return `
+    <div class="round-fields">
+      <select data-course="${esc(s.id)}" aria-label="Course">${courseOptions(s.courseId, 'Pick the course')}</select>
+      <div class="score-row">
+        <label class="score"><span>Score</span>
+          <input type="number" inputmode="numeric" min="1" max="300" data-score="${esc(s.id)}" value="${s.score ?? ''}" placeholder="–">
+        </label>
+        <select data-holes="${esc(s.id)}" aria-label="Holes played">${holeOpts}</select>
+      </div>
+    </div>`;
 }
 
 // ---------- Sign-in ----------
@@ -539,6 +682,7 @@ async function importFiles(fileList) {
       const b = readBackup(text);
       if (!b) { errors.push(`${f.name} isn't a backup from this app.`); continue; }
       restoredSessions.push(...b.sessions); restored++; // a backup is restored as it is
+      restoreCourses(data, b.courses);
       if (b.settings) { Object.assign(data.settings, b.settings); settingsChanged = true; }
       continue;
     }
@@ -559,6 +703,7 @@ async function importFiles(fileList) {
   const skipped = keepBagShots(data, fresh);
   const allSkipped = fresh.filter(s => !s.shots.length).length; // every shot was a club not in the bag
   if (settingsChanged) touchSettings(data);
+  for (const s of fresh) if (s.shots.length) autoCourse(data, s); // E6 rounds name their course
 
   const { added, duplicates } = addSessions(data, [...restoredSessions, ...fromFiles.filter(s => s.shots.length)]);
   persist();
@@ -628,9 +773,11 @@ function show(view) {
 
 function refresh() {
   recompute();
+  renderPlaying();
   renderCaddie();
   renderBag();
   renderSessions();
+  if ($('#course').open) renderCourseDialog(); // e.g. a sync brought in a round
 }
 
 // ---------- Events ----------
@@ -663,6 +810,10 @@ document.addEventListener('click', e => {
     }
   } else if (t.dataset.shots) {
     openShots(t.dataset.shots);
+  } else if ('courseOpen' in t.dataset) {
+    openCourse();
+  } else if ('dialogCancel' in t.dataset) {
+    t.closest('dialog').close('cancel');
   } else if (t.dataset.club) {
     toggleClub(t.dataset.club);
   } else if (t.id === 'bag-edit') {
@@ -702,21 +853,48 @@ $('#target').addEventListener('focus', e => e.target.select());
 $('#file').addEventListener('change', async e => { await importFiles([...e.target.files]); e.target.value = ''; });
 $('#units').addEventListener('change', e => { data.settings.units = e.target.value; touchSettings(data); persist(); refresh(); scheduleSync(); });
 $('#window').addEventListener('change', e => { data.settings.window = e.target.value; touchSettings(data); persist(); refresh(); scheduleSync(); });
-$('#session-list').addEventListener('change', e => {
-  const id = e.target.dataset.date;
-  if (!id || !e.target.value) return;
-  const s = data.sessions.find(x => x.id === id);
-  if (s) {
-    s.date = e.target.value;
+$('#session-list').addEventListener('change', async e => {
+  const t = e.target, d = t.dataset;
+  const s = data.sessions.find(x => x.id === (d.date || d.course || d.score || d.holes));
+  if (!s) return;
+  if (d.date) {
+    if (!t.value) return;
+    s.date = t.value;
     delete s.dateGuessed;
-    touch(s);
     sortSessions(data);
-    persist(); refresh(); scheduleSync();
+  } else if (d.course) {
+    let id = t.value;
+    if (id === '+add') {
+      const c = await askNewCourse();
+      if (!c) { t.value = s.courseId || ''; return; }
+      id = c.id;
+    }
+    if (id) s.courseId = id; else delete s.courseId;
+  } else if (d.score) {
+    const n = t.value === '' ? null : Number(t.value);
+    if (n != null && !(Number.isInteger(n) && n >= 1 && n <= 300)) {
+      t.value = s.score ?? '';
+      status('Enter the score as the number of strokes, like 92.');
+      return;
+    }
+    if (n == null) delete s.score;
+    else { s.score = n; s.holes ??= roundHoles(s) ?? 18; } // the holes shown next to it
+  } else {
+    s.holes = +t.value;
   }
+  touch(s);
+  persist(); refresh(); scheduleSync();
 });
+// The course pop-up: the course being played, and which round to show.
+$('#course').addEventListener('change', e => {
+  if (e.target.id === 'playing-select') pickPlaying(e.target);
+  else if (e.target.id === 'round-select') { courseRound = e.target.value; renderCourseDialog(); }
+});
+$('#course').addEventListener('click', e => { if (e.target === e.currentTarget) e.currentTarget.close(); });
 
 // ---------- Start ----------
 $('#target').value = data.settings.target;
+if (!data.coursesReady) { migrateCourses(data, touch); persist(); } // sessions from before courses
 refresh();
 requestPersistence();
 // Decide from what's stored right away, so a signed-in device never flashes the gate.
