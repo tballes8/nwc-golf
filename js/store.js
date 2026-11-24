@@ -61,6 +61,17 @@ export function save(data) {
   }
 }
 
+/**
+ * Another copy of the app in this browser (a second tab or window) saved: call onChange with
+ * what it saved. Every change is saved straight away, so the other copy's data is the latest;
+ * taking it stops this copy from overwriting it with an older version at its next save.
+ */
+export function watchOtherCopies(onChange) {
+  window.addEventListener('storage', e => {
+    if (e.key === KEY || e.key === null) onChange(load()); // null: storage was cleared
+  });
+}
+
 /** Ask the browser not to clear our data under storage pressure. */
 export async function requestPersistence() {
   try {

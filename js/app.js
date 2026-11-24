@@ -1,6 +1,6 @@
 import { parseSessionFile, clubInfo, sessionLabel, sessionKind } from './parse.js';
 import { buildProfiles, pickClub, recentShots, strikeComparison, DEFAULTS } from './stats.js';
-import { load, save, addSessions, backupBlob, readBackup, requestPersistence, touch, touchSettings, deleteSession, sortSessions } from './store.js';
+import { load, save, addSessions, backupBlob, readBackup, requestPersistence, touch, touchSettings, deleteSession, sortSessions, watchOtherCopies } from './store.js';
 import { checkAccount, signOut, SIGN_IN_URL, storedAccount, rememberAccount, forgetAccount } from './account.js';
 import { syncNow, clearDevice } from './sync.js';
 import { byOrder, shotCounts, currentBag, setClub, newClubs, keepBagShots } from './bag.js';
@@ -484,6 +484,21 @@ function renderBag() {
 }
 
 // ---------- Sessions ----------
+/** [[clubCode, shots], ...] for a session, longest club first. */
+function clubCounts(s) {
+  const counts = new Map();
+  for (const x of s.shots) counts.set(x.clubCode, (counts.get(x.clubCode) || 0) + 1);
+  return [...counts].sort((a, b) => clubInfo(a[0]).order - clubInfo(b[0]).order);
+}
+const sessionName = s => (s.date ? `the ${niceDate(s.date)} session` : 'a session with no date');
+/** "5 iron ×10" for a short session; "56 shots with 11 clubs" for a round. */
+function clubSummary(s) {
+  const counts = clubCounts(s);
+  return counts.length <= 3
+    ? counts.map(([c, n]) => `${clubInfo(c).name} ×${n}`).join(', ')
+    : `${s.shots.length} shots with ${counts.length} clubs`;
+}
+
 function renderSessions() {
   $('#units').value = data.settings.units;
   $('#window').value = data.settings.window;
@@ -493,7 +508,7 @@ function renderSessions() {
   const ul = $('#session-list');
   if (!data.sessions.length) { ul.innerHTML = ''; return; }
   ul.innerHTML = data.sessions.map(s => {
-    const clubs = [...new Set(s.shots.map(x => x.clubCode))].sort((a, b) => clubInfo(a).order - clubInfo(b).order).map(c => shortName({ name: clubInfo(c).name })).join(', ');
+    const clubs = clubCounts(s).map(([c, n]) => `${shortName({ name: clubInfo(c).name })} ×${n}`).join(', ');
     const round = isRound(s);
     return `
       <li class="${s.excluded ? 'off' : ''}">
@@ -708,9 +723,20 @@ async function importFiles(fileList) {
   const { added, duplicates } = addSessions(data, [...restoredSessions, ...fromFiles.filter(s => s.shots.length)]);
   persist();
   refresh();
+  // Name what came in, so a file with the wrong club in it (say, 5 wood shots still tagged
+  // 5 iron in Rapsodo) stands out straight away.
   const parts = [];
-  if (added) parts.push(`Imported ${added} session${added === 1 ? '' : 's'}`);
-  if (duplicates) parts.push(`${duplicates} already imported`);
+  const imported = fresh.filter(s => data.sessions.includes(s));
+  if (added && imported.length === added && added <= 2) {
+    for (const s of imported) parts.push(`Imported ${sessionName(s)}: ${clubSummary(s)}`);
+  } else if (added) parts.push(`Imported ${added} session${added === 1 ? '' : 's'}`);
+  // And which stored session a file matched (e.g. a re-export that still held the old shots).
+  const dup = fromFiles.find(s => !data.sessions.includes(s) && data.sessions.some(x => x.id === s.id));
+  const match = dup && data.sessions.find(x => x.id === dup.id);
+  if (match) {
+    const others = duplicates - 1;
+    parts.push(`${dup.fileName} is ${sessionName(match)}, already imported (${clubSummary(match)})${others ? `, and ${others} more already imported` : ''}`);
+  } else if (duplicates) parts.push(`${duplicates} already imported`);
   if (skipped.size) {
     const n = [...skipped.values()].reduce((a, b) => a + b, 0);
     parts.push(`Left out ${n} shot${n === 1 ? '' : 's'} with clubs not in your bag (${[...skipped.keys()].map(c => clubInfo(c).name).join(', ')})`);
@@ -897,6 +923,13 @@ $('#target').value = data.settings.target;
 if (!data.coursesReady) { migrateCourses(data, touch); persist(); } // sessions from before courses
 refresh();
 requestPersistence();
+// A second tab or window of the app saved: take its data, so this one can't overwrite it.
+watchOtherCopies(latest => {
+  for (const k of Object.keys(data)) delete data[k];
+  Object.assign(data, latest);
+  $('#target').value = data.settings.target;
+  refresh();
+});
 // Decide from what's stored right away, so a signed-in device never flashes the gate.
 if (!storedAccount()) { setGated(true); renderGate('checking'); }
 checkSignIn();
