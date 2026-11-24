@@ -180,6 +180,16 @@ assert.notEqual(pickClub(myBag, 155, 4).best.profile.code, '4i', 'a club not in 
   assert.deepEqual(newClubs(older, [file('h', ['4i'])]).clubs, []);
 }
 
+// Total distance: shown with carry from the good shots; left off when most shots have none.
+{
+  const shot = (carry, total) => ({ clubCode: '7i', carry, total, ballSpeed: carry / 1.3, clubSpeed: 80, smash: 1.35, apex: 80 });
+  const withTotals = buildProfiles([{ id: 't1', date: '2026-11-20', shots: [140, 142, 144, 146, 148].map(c => shot(c, c + 15)) }])[0];
+  assert.deepEqual(withTotals.total, { median: 159, p25: 157, p75: 161 });
+  const without = buildProfiles([{ id: 't2', date: '2026-11-20', shots: [140, 142, 144, 146, 148].map((c, i) => shot(c, i < 2 ? c + 15 : null)) }])[0];
+  assert.equal(without.total, null, 'fewer than half the good shots have a total');
+  assert.equal(withTotals.median, 144, 'carry unchanged');
+}
+
 // Courses (js/courses.js)
 {
   const { courseIdFor, addCourse, courseNamed, autoCourse, guessHoles, courseHistory, roundByHole, migrateCourses, playingCourse, restoreCourses } = await import('../js/courses.js');

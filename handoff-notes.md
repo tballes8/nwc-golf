@@ -9,7 +9,7 @@ State of the app when development moved to Claude Code in VS Code.
 - Data is stored per browser (localStorage). Importing on the PC does not reach the phone; use Download backup, then import the .json on the phone.
 
 ## How the numbers are built (js/stats.js)
-- Carry only. Total distance and spin are not used.
+- Club picks use carry only. Total distance is shown next to carry (Caddie, chart circle, Bag cards) from the same good shots, added Nov 23; spin is not used.
 - Partial swings left out: club speed under 85% of that club's 90th-percentile club speed (chips and pitches from sim rounds).
 - Mishits left out: smash factor under 1.0, carry under 0.9 yd per mph of ball speed, apex under 10 ft, or carry under 75% of the median of the club's full swings that pass those three checks. (Ball-speed and apex checks added Nov 22 from e6-import-spec.md; skipped for metric Rapsodo files. Rapsodo apex is in feet, like E6.)
 - Recent window: last 120 days of each club's sessions, reaching back until the club has 15 good shots. "All sessions" option on the Sessions screen.

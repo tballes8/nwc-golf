@@ -95,7 +95,7 @@ function bagChart(el, target, pickCode, scale = null) {
   if (scale) ({ min, max } = scale);
   else {
     const lo = Math.min(...profiles.map(p => p.p10), target ?? Infinity);
-    const hi = Math.max(...profiles.map(p => p.p90), target ?? -Infinity);
+    const hi = Math.max(...profiles.map(p => Math.max(p.p90, p.total?.median ?? 0)), target ?? -Infinity);
     min = Math.floor((lo - 5) / 10) * 10; max = Math.ceil((hi + 5) / 10) * 10;
   }
   el.dataset.min = min; el.dataset.max = max;
@@ -109,10 +109,11 @@ function bagChart(el, target, pickCode, scale = null) {
       ${profiles.map(p => `
         <div class="row${p.code === pickCode ? ' pick' : ''}">
           <span class="nm">${esc(shortName(p))}</span>
-          <div class="track" aria-label="${esc(p.name)}: middle half ${fmt(p.p25)} to ${fmt(p.p75)}, median ${fmt(p.median)}">
+          <div class="track" aria-label="${esc(p.name)}: carry middle half ${fmt(p.p25)} to ${fmt(p.p75)}, median ${fmt(p.median)}${p.total ? `, total about ${fmt(p.total.median)}` : ''}">
             <span class="w" style="left:${x(p.p10)};width:calc(${x(p.p90)} - ${x(p.p10)})"></span>
             <span class="q" style="left:${x(p.p25)};width:calc(${x(p.p75)} - ${x(p.p25)})"></span>
             <span class="m" style="left:${x(p.median)}"></span>
+            ${p.total ? `<span class="t" style="left:${x(p.total.median)}"></span>` : ''}
           </div>
           <span class="md">${fmt(p.median)}</span>
         </div>`).join('')}
@@ -147,7 +148,7 @@ function renderCaddie() {
 
   el.innerHTML = `
     <p class="club">${shotsButton(p.code, p.name)}</p>
-    <p class="why"><strong>${pct(best.inside)}</strong> of your ${esc(p.name.toLowerCase())} shots land within ${zone} yards of ${target}. It usually carries ${fmt(p.p25)}–${fmt(p.p75)}.</p>
+    <p class="why"><strong>${pct(best.inside)}</strong> of your ${esc(p.name.toLowerCase())} shots land within ${zone} yards of ${target}. It usually carries ${fmt(p.p25)}–${fmt(p.p75)}${p.total ? `, about ${fmt(p.total.median)} in total` : ''}.</p>
     <div class="split" aria-hidden="true">
       <span class="s" style="width:${best.short * 100}%"></span><span class="i" style="width:${best.inside * 100}%"></span><span class="l" style="width:${best.long * 100}%"></span>
     </div>
@@ -442,6 +443,7 @@ function clubCard(p) {
         <div class="club-head"><h2>${shotsButton(p.code, p.name)}</h2><span class="big">${fmt(p.median)}<small>yd</small></span></div>
         <dl>
           <dt>Usual carry</dt><dd>${fmt(p.p25)}–${fmt(p.p75)} yd (middle half of shots)</dd>
+          ${p.total ? `<dt>Total</dt><dd>${fmt(p.total.p25)}–${fmt(p.total.p75)} yd, about ${fmt(p.total.median)} (roll is estimated)</dd>` : ''}
           ${p.sideSd != null ? `<dt>Left/right</dt><dd>about ±${fmt(p.sideSd)} yd${Math.abs(p.sideMean) >= 3 ? `, leaning ${p.sideMean < 0 ? 'left' : 'right'} ${fmt(Math.abs(p.sideMean))} yd` : ''}</dd>` : ''}
           <dt>Shots</dt><dd class="${conf}">${p.goodShots} full swings${conf ? ` (${p.confidence} data)` : ''}</dd>
           ${p.mishits || p.partials ? `<dt>Left out</dt><dd>${[p.mishits ? `${p.mishits} mishit${p.mishits === 1 ? '' : 's'}` : '', p.partials ? `${p.partials} partial swing${p.partials === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ')}</dd>` : ''}
@@ -460,7 +462,7 @@ function renderBag() {
   const total = profiles.reduce((s, p) => s + p.goodShots, 0);
   $('#bag-lede').textContent = !profiles.length && !noSwings.length
     ? 'No clubs yet. Import sessions to build your bag.'
-    : `${bag.length} club${bag.length === 1 ? '' : 's'} in your bag, from ${total} full swings. Carry only, in yards. Mishits and partial swings (chips, pitches) are left out. Tap a club for its last 10 shots.`;
+    : `${bag.length} club${bag.length === 1 ? '' : 's'} in your bag, from ${total} full swings. Yards; club picks use carry, and the circle on each bar is the usual total. Mishits and partial swings (chips, pitches) are left out. Tap a club for its last 10 shots.`;
   $('#club-list').innerHTML = [
     ...profiles.map(p => [p.order, clubCard(p)]),
     ...noSwings.map(c => [clubInfo(c).order, `

@@ -121,6 +121,8 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .track .q { position: absolute; top: 9px; height: 12px; border-radius: 6px; background: #8FA798; }
 .row.pick .track .q { background: var(--fairway); }
 .track .m { position: absolute; top: 6px; width: 2px; height: 18px; background: var(--ink); }
+/* Usual total distance: an open circle, so it reads apart from the carry bar it may overlap */
+.track .t { position: absolute; top: 10px; width: 10px; height: 10px; margin-left: -5px; border: 2px solid var(--ink-2); border-radius: 50%; background: var(--paper); }
 .axis { display: grid; grid-template-columns: 76px 1fr 40px; height: 20px; }
 .axis .scale { position: relative; font-size: 12px; color: var(--ink-2); }
 .axis .scale span { position: absolute; transform: translateX(-50%); }

@@ -113,6 +113,9 @@ export function buildProfiles(sessions, { window = 'recent', units = 'yd', bag =
     const { good, partial, mishit } = classify(all, opts);
     if (!good.length) continue;
     const carries = good.map(s => s.carry).sort((a, b) => a - b);
+    // Total distance: shown alongside carry, never used for the pick (carry is what clears
+    // trouble). Indoors it's the launch monitor's roll estimate, not a measurement.
+    const totals = good.map(s => s.total).filter(x => x != null).sort((a, b) => a - b);
     const sides = good.map(s => s.side).filter(x => x != null);
     const hasSide = sides.length >= 2; // otherwise there's no left/right spread to show
     const info = clubInfo(code);
@@ -132,6 +135,9 @@ export function buildProfiles(sessions, { window = 'recent', units = 'yd', bag =
       p25: quantile(carries, 0.25),
       p75: quantile(carries, 0.75),
       p90: quantile(carries, 0.9),
+      // null when fewer than half the good shots have a total
+      total: totals.length && totals.length * 2 >= good.length
+        ? { median: quantile(totals, 0.5), p25: quantile(totals, 0.25), p75: quantile(totals, 0.75) } : null,
       sd: sd(carries),
       sideSd: hasSide ? sd(sides) : null,
       sideMean: hasSide ? mean(sides) : null,
