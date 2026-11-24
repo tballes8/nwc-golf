@@ -85,11 +85,15 @@ function recentFor(code) {
 }
 
 // ---------- Bag chart ----------
-// Column widths shared with .row/.axis in app.css: club name | track | median.
+// Column widths shared with .row/.axis in app.css: club name | track | median. (The Bag
+// chart's wider right column, .chart.totals, holds "carry/total"; it has no flag line.)
 const NAME_W = 76, MEDIAN_W = 40;
 
-/** scale: optional { min, max } in yards; used to hold the chart still while the flag is dragged. */
-function bagChart(el, target, pickCode, scale = null) {
+/**
+ * scale: optional { min, max } in yards; used to hold the chart still while the flag is dragged.
+ * totals: show "carry/total" on the right, under a header row (Bag screen).
+ */
+function bagChart(el, target, pickCode, scale = null, { totals = false } = {}) {
   if (!profiles.length) { el.innerHTML = ''; return; }
   let min, max;
   if (scale) ({ min, max } = scale);
@@ -105,7 +109,8 @@ function bagChart(el, target, pickCode, scale = null) {
   for (let t = Math.ceil(min / stepT) * stepT; t <= max; t += stepT) ticks.push(t);
 
   el.innerHTML = `
-    <div class="chart">
+    <div class="chart${totals ? ' totals' : ''}">
+      ${totals ? '<div class="row head" aria-hidden="true"><span>Club</span><span>Carry range</span><span>Carry/Total</span></div>' : ''}
       ${profiles.map(p => `
         <div class="row${p.code === pickCode ? ' pick' : ''}">
           <span class="nm">${esc(shortName(p))}</span>
@@ -115,7 +120,7 @@ function bagChart(el, target, pickCode, scale = null) {
             <span class="m" style="left:${x(p.median)}"></span>
             ${p.total ? `<span class="t" style="left:${x(p.total.median)}"></span>` : ''}
           </div>
-          <span class="md">${fmt(p.median)}</span>
+          <span class="md">${fmt(p.median)}${totals && p.total ? `<span class="tot">/${fmt(p.total.median)}</span>` : ''}</span>
         </div>`).join('')}
       <div class="axis"><span></span><div class="scale">${ticks.map(t => `<span style="left:${x(t)}">${t}</span>`).join('')}</div><span></span></div>
       ${target != null ? `<div class="flagline" style="left:calc(${NAME_W}px + (100% - ${NAME_W + MEDIAN_W}px) * ${(target - min) / (max - min)})" aria-hidden="true"></div>` : ''}
@@ -440,7 +445,10 @@ function clubCard(p) {
   const conf = p.confidence === 'solid' ? '' : p.confidence === 'thin' ? 'conf-thin' : 'conf-very';
   return `
       <article class="club">
-        <div class="club-head"><h2>${shotsButton(p.code, p.name)}</h2><span class="big">${fmt(p.median)}<small>yd</small></span></div>
+        <div class="club-head"><h2>${shotsButton(p.code, p.name)}</h2>
+          <span class="big" aria-label="Carry ${fmt(p.median)} yards${p.total ? `, total ${fmt(p.total.median)}` : ''}">${fmt(p.median)}${p.total ? `<span class="tot">/${fmt(p.total.median)}</span>` : ''}<small>yd</small></span>
+        </div>
+        ${p.total ? '<p class="big-key">carry/total</p>' : ''}
         <dl>
           <dt>Usual carry</dt><dd>${fmt(p.p25)}–${fmt(p.p75)} yd (middle half of shots)</dd>
           ${p.total ? `<dt>Total</dt><dd>${fmt(p.total.p25)}–${fmt(p.total.p75)} yd, about ${fmt(p.total.median)} (roll is estimated)</dd>` : ''}
@@ -456,7 +464,7 @@ function clubCard(p) {
 
 function renderBag() {
   renderBagEditor();
-  bagChart($('#bag-chart'), null, null);
+  bagChart($('#bag-chart'), null, null, null, { totals: true });
   const bag = currentBag(data);
   const noSwings = bag.filter(c => !profiles.some(p => p.code === c)); // in the bag, nothing on record yet
   const total = profiles.reduce((s, p) => s + p.goodShots, 0);

@@ -125,6 +125,12 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .track .t { position: absolute; top: 10px; width: 10px; height: 10px; margin-left: -5px; border: 2px solid var(--ink-2); border-radius: 50%; background: var(--paper); }
 .axis { display: grid; grid-template-columns: 76px 1fr 40px; height: 20px; }
 .axis .scale { position: relative; font-size: 12px; color: var(--ink-2); }
+/* Bag chart: "carry/total" on the right, under a header row */
+.chart.totals .row, .chart.totals .axis { grid-template-columns: 76px 1fr 72px; }
+.row.head { height: 22px; font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.row.head span:last-child { text-align: right; }
+.row.head span:nth-child(2) { text-align: center; }
+.md .tot { color: var(--ink-2); font-weight: 600; }
 .axis .scale span { position: absolute; transform: translateX(-50%); }
 .flagline { position: absolute; top: 0; bottom: 20px; width: 2px; background: var(--flag); pointer-events: none; }
 /* Caddie chart: the flag can be dragged (see "Dragging the flag" in app.js). */
@@ -140,6 +146,8 @@ h1 { font: 700 34px/1.05 var(--display); margin: 6px 0 6px; }
 .club-head h2 { font: 700 26px/1 var(--display); margin: 0; }
 .club-head .big { font: 700 30px/1 var(--display); }
 .club-head .big small { font: 500 15px/1 var(--body); color: var(--ink-2); margin-left: 3px; }
+.club-head .big .tot { color: var(--ink-2); }
+.big-key { margin: 2px 0 0; text-align: right; font-size: 13px; color: var(--ink-2); }
 .club dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 14px; margin: 8px 0 0; font-size: 15px; }
 .club dt { color: var(--ink-2); }
 .club dd { margin: 0; }
